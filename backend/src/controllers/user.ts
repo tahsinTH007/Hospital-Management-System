@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import activityLog from "../models/activityLog";
 import { logActivity } from "../lib/activity";
+import { inngest } from "../inngest/client";
 
 export const getUserById = async (req: Request, res: Response) => {
   try {
@@ -133,6 +134,29 @@ export const fetchAllUsers = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const admitPatient = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { admissionReason } = req.body;
+
+    await inngest.send({
+      name: "patient/admitted",
+      data: { patientId: id, admissionReason },
+    });
+
+    await logActivity(
+      (req as any).user.id,
+      "Admitted Patient",
+      `Admitted patient ${id}`,
+    );
+
+    res.json({ message: "Patient admission requested successfully" });
+  } catch (error) {
+    console.error("Error admitting patient:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
