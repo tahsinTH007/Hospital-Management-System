@@ -11,7 +11,7 @@ export type Role =
   | "lab_tech"
   | "patient";
 
-export const checkRole = (allowedRoles: Role) => {
+export const checkRole = (allowedRoles: Role[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const session = await auth.api.getSession({

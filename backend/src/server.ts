@@ -12,6 +12,7 @@ import { connectDB } from "./config/db";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth";
 import userRouter from "./routes/user";
+import activityLogRouter from "./routes/activity";
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.get("/api/me", async (req, res) => {
 });
 
 app.use("/api/users", userRouter);
+app.use("/api/activity-logs", activityLogRouter);
 
 app.use((err: any, _req: Request, res: Response, _next: any) => {
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
