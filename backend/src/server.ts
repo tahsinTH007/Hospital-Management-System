@@ -14,8 +14,10 @@ import { auth } from "./lib/auth";
 import userRouter from "./routes/user";
 import activityLogRouter from "./routes/activity";
 import { inngest } from "./inngest/client";
-import { admitPatient } from "./inngest/functions";
+import { admitPatient, analyzeXRayJob } from "./inngest/functions";
 import { serve } from "inngest/express";
+import notificationRouter from "./routes/notification";
+import labResultsRouter from "./routes/labResults";
 
 dotenv.config();
 
@@ -58,12 +60,14 @@ app.get("/api/me", async (req, res) => {
 
 app.use("/api/users", userRouter);
 app.use("/api/activity-logs", activityLogRouter);
+app.use("/api/notifications", notificationRouter);
+app.use("/api/lab-results", labResultsRouter);
 
 app.use(
   "/api/inngest",
   serve({
     client: inngest,
-    functions: [admitPatient],
+    functions: [admitPatient, analyzeXRayJob],
   } as any),
 );
 

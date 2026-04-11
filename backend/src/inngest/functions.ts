@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { notifyUsers } from "./notifyUsers";
+import labResults from "../models/labResults";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY!);
 
@@ -112,17 +114,94 @@ export const admitPatient = inngest.createFunction(
       });
     });
 
-    // await step.run("send-notification", async () => {
-    //   await notifyUsers(
-    //     aiAssignment.doctorId,
-    //     aiAssignment.nurseId,
-    //     "Patient Assigned",
-    //     `You have been assigned to a new patient: ${updatedPatient?.name}`,
-    //     `/patient/${patientId}`,
-    //     "assignment",
-    //   );
-    // });
+    await step.run("send-notification", async () => {
+      await notifyUsers(
+        aiAssignment.doctorId,
+        aiAssignment.nurseId,
+        "Patient Assigned",
+        `You have been assigned to a new patient: ${updatedPatient?.name}`,
+        `/patient/${patientId}`,
+        "assignment",
+      );
+    });
 
     return { success: true, aiAssignment, updatedPatient };
+  },
+);
+
+export const analyzeXRayJob = inngest.createFunction(
+  {
+    id: "analyze-xray",
+    triggers: {
+      event: "labResult/created",
+    },
+  },
+  async ({ event, step }) => {
+    const { labResultId, imageUrl, bodyPart } = event.data;
+
+    const imageBase64 = await step.run("fetch-image", async () => {
+      const response = await fetch(imageUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer).toString("base64");
+    });
+
+    const aiAnalysis = await step.run("call-gemini", async () => {
+      const model = genAI.getGenerativeModel({
+        model: "gemini-3-flash-preview",
+      });
+
+      const prompt = `You are an expert AI radiologist. Analyze this ${bodyPart} x-ray image. Provide a structured response: \n1. Key Findings\n2. Potential Abnormalities\n3. Summary.\nKeep it clinical, concise, and end with a disclaimer.`;
+
+      const imageParts = [
+        {
+          inlineData: {
+            data: imageBase64,
+            mimeType: "image/jpeg",
+          },
+        },
+      ];
+
+      const result = await model.generateContent([prompt, ...imageParts]);
+      return result.response.text();
+    });
+
+    const updatedLab = await step.run("update-db", async () => {
+      const updatedLabResult = await labResults
+        .findByIdAndUpdate(
+          labResultId,
+          { aiAnalysis, status: "analyzed" },
+          { new: true },
+        )
+        .lean();
+
+      if (!updatedLabResult) {
+        throw new NonRetriableError("Lab result not found");
+      }
+
+      const patient = await mongoose.connection
+        .collection("user")
+        .findOne(
+          { _id: new mongoose.Types.ObjectId(updatedLabResult.patient) },
+          { projection: { password: 0, emailVerified: 0 } },
+        );
+
+      const resultWithPatient = {
+        ...updatedLabResult,
+        patient: patient || null,
+      };
+
+      return resultWithPatient;
+    });
+
+    await step.run("send-notification", async () => {
+      await notifyUsers(
+        updatedLab?.patient?.assignedDoctorId.toString() || "",
+        updatedLab?.patient?.assignedNurseId.toString() || "",
+        "Lab Result Analyzed",
+        `Your lab result for ${updatedLab?.testType} has been analyzed.`,
+        `/patients`,
+        "lab_result",
+      );
+    });
   },
 );

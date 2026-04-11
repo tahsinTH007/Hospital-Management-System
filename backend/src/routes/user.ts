@@ -1,6 +1,11 @@
 import express from "express";
 import { requireAuth } from "../middleware/auth";
-import { admitPatient, fetchAllUsers, getUserById, updateUser } from "../controllers/user";
+import {
+  admitPatient,
+  fetchAllUsers,
+  getUserById,
+  updateUser,
+} from "../controllers/user";
 import { checkRole } from "../middleware/checkRole";
 
 const userRouter = express.Router();
@@ -12,14 +17,14 @@ userRouter.get(
   fetchAllUsers,
 );
 
-userRouter.get("/profile/:id", requireAuth, getUserById);
-
 userRouter.put(
   "/update/:id",
   requireAuth,
   checkRole(["admin", "doctor", "nurse"]),
   updateUser,
 );
+
+userRouter.get("/:id", requireAuth, getUserById);
 
 userRouter.post(
   "/:id/admit",
