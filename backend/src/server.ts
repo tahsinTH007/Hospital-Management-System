@@ -14,10 +14,15 @@ import { auth } from "./lib/auth";
 import userRouter from "./routes/user";
 import activityLogRouter from "./routes/activity";
 import { inngest } from "./inngest/client";
-import { admitPatient, analyzeXRayJob } from "./inngest/functions";
+import {
+  addChargeToInvoice,
+  admitPatient,
+  analyzeXRayJob,
+} from "./inngest/functions";
 import { serve } from "inngest/express";
 import notificationRouter from "./routes/notification";
 import labResultsRouter from "./routes/labResults";
+import invoiceRouter from "./routes/invoice";
 
 dotenv.config();
 
@@ -62,12 +67,13 @@ app.use("/api/users", userRouter);
 app.use("/api/activity-logs", activityLogRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/lab-results", labResultsRouter);
+app.use("/api/invoices", invoiceRouter);
 
 app.use(
   "/api/inngest",
   serve({
     client: inngest,
-    functions: [admitPatient, analyzeXRayJob],
+    functions: [admitPatient, analyzeXRayJob, addChargeToInvoice],
   } as any),
 );
 

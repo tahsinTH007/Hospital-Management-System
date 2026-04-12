@@ -4,6 +4,7 @@ import { NonRetriableError } from "inngest";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { notifyUsers } from "./notifyUsers";
 import labResults from "../models/labResults";
+import invoice from "../models/invoice";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY!);
 
@@ -203,5 +204,38 @@ export const analyzeXRayJob = inngest.createFunction(
         "lab_result",
       );
     });
+  },
+);
+
+export const addChargeToInvoice = inngest.createFunction(
+  {
+    id: "add-medical-charge",
+    triggers: {
+      event: "billing/charge.added",
+    },
+  },
+  async ({ event, step }) => {
+    const { patientId, description, priceInCents } = event.data;
+    if (!patientId || !priceInCents) {
+      throw new NonRetriableError("Missing required charge information.");
+    }
+
+    let inv = await invoice.findOne({ patientId, status: "draft" });
+    await step.run("create invoice", async () => {
+      if (!inv) {
+        inv = new invoice({ patientId, items: [], totalAmount: 0 });
+      }
+
+      inv.items.push({
+        description,
+        quantity: 1,
+        unitPrice: priceInCents,
+        totalPrice: priceInCents,
+      });
+      inv.totalAmount += priceInCents;
+      await inv.save();
+    });
+
+    return { success: true, invoiceId: inv?._id.toString() };
   },
 );
