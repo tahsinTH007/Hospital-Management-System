@@ -7,7 +7,6 @@ const notificationRouter = Router();
 notificationRouter.get("/", requireAuth, async (req, res) => {
   try {
     const currentUserId = (req as any).user.id;
-
     const notifications = await Notification.find({ user: currentUserId })
       .sort({ createdAt: -1 })
       .limit(20);

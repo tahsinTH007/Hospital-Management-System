@@ -17,18 +17,15 @@ export const admitPatient = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { patientId, admissionReason } = event.data;
-
     const collection = mongoose.connection.collection("user");
 
     const data = await step.run("fetch-hospital-data", async () => {
       const patient = await collection.findOne({
         _id: new mongoose.Types.ObjectId(patientId),
       });
-
       const doctors = await collection
         .find({ role: "doctor", status: "active" })
         .toArray();
-
       const nurses = await collection
         .find({ role: "nurse", status: "active" })
         .toArray();
@@ -86,7 +83,6 @@ export const admitPatient = inngest.createFunction(
       const result = await model.generateContent(prompt);
 
       const text = result.response.text();
-
       const cleanJson = text
         .replace(/```json/g, "")
         .replace(/```/g, "")
@@ -104,12 +100,10 @@ export const admitPatient = inngest.createFunction(
         assignedNurseName: aiAssignment.nurseName,
         triageReasoning: aiAssignment.reasoning,
       };
-
       await collection.updateOne(
         { _id: new mongoose.Types.ObjectId(patientId) },
         { $set: updatePayload },
       );
-
       return await collection.findOne({
         _id: new mongoose.Types.ObjectId(patientId),
       });
@@ -125,7 +119,6 @@ export const admitPatient = inngest.createFunction(
         "assignment",
       );
     });
-
     return { success: true, aiAssignment, updatedPatient };
   },
 );

@@ -1,14 +1,16 @@
 import express from "express";
-import { requireAuth } from "../middleware/auth";
+
+const userRouter = express.Router();
+
 import {
-  admitPatient,
   fetchAllUsers,
   getUserById,
   updateUser,
+  admitPatient,
+  getPolarPortalLink,
 } from "../controllers/user";
+import { requireAuth } from "../middleware/auth";
 import { checkRole } from "../middleware/checkRole";
-
-const userRouter = express.Router();
 
 userRouter.get(
   "/",
@@ -16,7 +18,6 @@ userRouter.get(
   checkRole(["admin", "doctor", "nurse"]),
   fetchAllUsers,
 );
-
 userRouter.put(
   "/update/:id",
   requireAuth,
@@ -24,13 +25,14 @@ userRouter.put(
   updateUser,
 );
 
-userRouter.get("/:id", requireAuth, getUserById);
-
+userRouter.get("/profile/:id", requireAuth, getUserById);
 userRouter.post(
   "/:id/admit",
   requireAuth,
   checkRole(["admin", "doctor", "nurse"]),
   admitPatient,
 );
+
+userRouter.get("/polar-portal/:userId", requireAuth, getPolarPortalLink);
 
 export default userRouter;

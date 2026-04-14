@@ -67,7 +67,6 @@ const Login = () => {
     );
     setIsLoading(false);
   };
-
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
       <Card className="rounded-lg shadow-2xl card backdrop-blur-xl">

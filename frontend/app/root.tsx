@@ -6,9 +6,13 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { TooltipProvider } from "./components/ui/tooltip";
+import { ThemeProvider } from "./components/provider/theme";
+import ToastProvider from "./components/provider/toast";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -31,9 +35,35 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var storageKey = "medflow-theme";
+                  var defaultTheme = "system";
+                  var theme = localStorage.getItem(storageKey) || defaultTheme;
+                  var supportDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
+                  
+                  var root = document.documentElement;
+                  root.classList.remove("light", "dark");
+                  
+                  if (theme === "dark" || (theme === "system" && supportDarkMode)) {
+                    root.classList.add("dark");
+                  } else {
+                    root.classList.add("light");
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body>
-        {children}
+        <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+          <TooltipProvider>{children}</TooltipProvider>
+          <ToastProvider />
+        </ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -42,7 +72,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  const queryClient = new QueryClient();
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Outlet />
+    </QueryClientProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

@@ -8,25 +8,37 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
-import { connectDB } from "./config/db";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+import { serve } from "inngest/express";
+import { createServer } from "http";
+
+import { connectDB } from "./config/db";
 import { auth } from "./lib/auth";
 import userRouter from "./routes/user";
 import activityLogRouter from "./routes/activity";
 import { inngest } from "./inngest/client";
 import {
-  addChargeToInvoice,
   admitPatient,
   analyzeXRayJob,
+  addChargeToInvoice,
 } from "./inngest/functions";
-import { serve } from "inngest/express";
 import notificationRouter from "./routes/notification";
 import labResultsRouter from "./routes/labResults";
 import invoiceRouter from "./routes/invoice";
+import { getIO, initSocket } from "./lib/socket";
+import { uploadRouter } from "./lib/uploadthing";
+import { createRouteHandler } from "uploadthing/express";
+import uploadthingRouter from "./routes/uploadthing";
 
 dotenv.config();
 
 const app: Application = express();
+const PORT = process.env.PORT || 5000;
+const httpServer = createServer(app);
+
+initSocket(httpServer);
+
+app.set("io", getIO());
 
 app.use(
   cors({
@@ -46,23 +58,21 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
-
-const PORT = process.env.PORT || 5000;
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
+}
 
 app.get("/", (req: Request, res: Response) => {
-  res.send("hello form the backend");
+  res.send("Hello from the backend!");
 });
 
-app.use("/api/auth", toNodeHandler(auth));
-
+app.all("/api/auth/*splat", toNodeHandler(auth));
 app.get("/api/me", async (req, res) => {
   const session = await auth.api.getSession({
     headers: fromNodeHeaders(req.headers),
   });
   return res.json(session);
 });
-
 app.use("/api/users", userRouter);
 app.use("/api/activity-logs", activityLogRouter);
 app.use("/api/notifications", notificationRouter);
@@ -74,10 +84,12 @@ app.use(
   serve({
     client: inngest,
     functions: [admitPatient, analyzeXRayJob, addChargeToInvoice],
-  } as any),
+  }),
 );
+app.use("/api/uploadthing", createRouteHandler({ router: uploadRouter }));
+app.use("/api/uploadthing/delete", uploadthingRouter);
 
-app.use((err: any, _req: Request, res: Response, _next: any) => {
+app.use((err: any, req: Request, res: Response, next: any) => {
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   res.status(statusCode);
   res.json({
@@ -88,9 +100,9 @@ app.use((err: any, _req: Request, res: Response, _next: any) => {
 
 connectDB()
   .then(() => {
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       console.log(
-        `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`,
+        `🚀 Server + Socket.IO running in ${process.env.NODE_ENV} mode on port ${PORT}`,
       );
     });
   })

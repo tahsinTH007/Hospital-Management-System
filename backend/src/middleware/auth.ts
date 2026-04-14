@@ -1,6 +1,6 @@
-import type { Request, Response, NextFunction } from "express";
 import { auth } from "../lib/auth";
 import { fromNodeHeaders } from "better-auth/node";
+import type { Request, Response, NextFunction } from "express";
 
 export const requireAuth = async (
   req: Request,
@@ -18,7 +18,6 @@ export const requireAuth = async (
 
     (req as any).session = session;
     (req as any).user = session.user;
-
     next();
   } catch (error) {
     console.error("Authentication error:", error);

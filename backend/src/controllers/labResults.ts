@@ -1,15 +1,14 @@
 import type { Request, Response } from "express";
-import labResults from "../models/labResults";
+import LabResult from "../models/labResults";
 import { inngest } from "../inngest/client";
 import { logActivity } from "../lib/activity";
 
 export const createLabResult = async (req: Request, res: Response) => {
   try {
     const { patientId, testType, bodyPart, imageUrl } = req.body;
-
     const currentUserId = (req as any).user?.id;
 
-    const newLabResult = await labResults.create({
+    const newLabResult = await LabResult.create({
       patient: patientId,
       testType,
       bodyPart,
@@ -17,7 +16,13 @@ export const createLabResult = async (req: Request, res: Response) => {
       status: "pending",
       uploadedBy: currentUserId,
     });
-
+    if (!newLabResult) {
+      return res.status(400).json({ message: "Failed to create lab result" });
+    }
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("lab_result_added");
+    }
     if (testType === "X-Ray" && newLabResult) {
       await inngest.send({
         name: "labResult/created",
@@ -27,7 +32,6 @@ export const createLabResult = async (req: Request, res: Response) => {
           bodyPart: newLabResult.bodyPart,
         },
       });
-
       await inngest.send({
         name: "billing/charge.added",
         data: {
@@ -42,7 +46,6 @@ export const createLabResult = async (req: Request, res: Response) => {
         `Uploaded ${testType} for ${bodyPart}`,
       );
     }
-
     res.status(201).json(newLabResult);
   } catch (error) {
     console.error("Error creating lab result:", error);
@@ -53,7 +56,7 @@ export const createLabResult = async (req: Request, res: Response) => {
 export const getPatientLabResults = async (req: Request, res: Response) => {
   try {
     const { patientId } = req.params;
-    const results = await labResults.find({ patient: patientId }).sort({
+    const results = await LabResult.find({ patient: patientId }).sort({
       createdAt: -1,
     });
     res.status(200).json(results);
@@ -67,7 +70,7 @@ export const updateLabResult = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { aiAnalysis, doctorNotes, status } = req.body;
-    const updatedResult = await labResults.findByIdAndUpdate(
+    const updatedResult = await LabResult.findByIdAndUpdate(
       id,
       {
         $set: {
@@ -82,7 +85,11 @@ export const updateLabResult = async (req: Request, res: Response) => {
     if (!updatedResult) {
       return res.status(404).json({ message: "Lab result not found" });
     }
-
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("lab_result_updated", updatedResult);
+    }
+    // TODO: notify users
     await logActivity(
       (req as any).user.id,
       "Updated Lab Result",

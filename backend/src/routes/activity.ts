@@ -1,11 +1,12 @@
 import express from "express";
-import { requireAuth } from "../middleware/auth";
-import { checkRole } from "../middleware/checkRole";
-import { addActivityLog, getActivityLogs } from "../controllers/activity";
 
 const activityLogRouter = express.Router();
 
+import { requireAuth } from "../middleware/auth";
+import { addActivityLog, getActivityLogs } from "../controllers/activity";
+import { checkRole } from "../middleware/checkRole";
+
 activityLogRouter.get("/", requireAuth, checkRole(["admin"]), getActivityLogs);
-activityLogRouter.get("/create", requireAuth, addActivityLog);
+activityLogRouter.post("/create", requireAuth, addActivityLog);
 
 export default activityLogRouter;

@@ -1,6 +1,6 @@
-import type { Request, Response, NextFunction } from "express";
 import { auth } from "../lib/auth";
 import { fromNodeHeaders } from "better-auth/node";
+import type { Request, Response, NextFunction } from "express";
 
 export type Role =
   | "all"
@@ -31,7 +31,6 @@ export const checkRole = (allowedRoles: Role[]) => {
       }
 
       (req as any).user = session.user;
-
       next();
     } catch (error) {
       console.error("Error checking role:", error);
