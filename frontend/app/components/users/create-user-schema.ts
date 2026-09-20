@@ -31,7 +31,7 @@ export const userSchema = (isEdit: boolean) => {
           .refine((val) => !val || val.length >= 6, {
             message: "Password must be at least 6 characters",
           })
-      : z.string().min(8, "Password must be at least 8 characters"),
+      : z.string().min(6, "Password must be at least 6 characters"),
   });
 };
 

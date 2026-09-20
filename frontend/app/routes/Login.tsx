@@ -1,5 +1,5 @@
 import type { Route } from "./+types/Login";
-import { Activity, Lock, Mail, ChevronRight, AlertCircle } from "lucide-react";
+import { Activity, Lock, UserRound, ChevronRight, AlertCircle } from "lucide-react";
 import { CustomInput } from "@/components/global/CustomInput";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,7 +32,7 @@ const Login = () => {
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "", rememberMe: false },
+    defaultValues: { identifier: "", password: "", rememberMe: false },
   });
 
   if (isPending) {
@@ -50,23 +50,36 @@ const Login = () => {
   const onSubmit = async (data: LoginFormValues) => {
     setGlobalError("");
     setIsLoading(true);
+    const callbacks = {
+      onSuccess: (ctx: { data?: { user?: { id: string; role?: string | null } } }) => {
+        toast.success("Login successful");
+        navigate(getHomePath(ctx.data?.user), { replace: true });
+      },
+      onError: (ctx: { error: { message?: string } }) => {
+        setGlobalError(ctx.error.message || "Unable to sign in");
+      },
+    };
     try {
-      await authClient.signIn.email(
-        {
-          email: data.email,
-          password: data.password,
-          rememberMe: data.rememberMe,
-        },
-        {
-          onSuccess: (ctx) => {
-            toast.success("Login successful");
-            navigate(getHomePath(ctx.data?.user), { replace: true });
+      // Anything with an "@" is treated as an email, otherwise as a username.
+      if (data.identifier.includes("@")) {
+        await authClient.signIn.email(
+          {
+            email: data.identifier,
+            password: data.password,
+            rememberMe: data.rememberMe,
           },
-          onError: (ctx) => {
-            setGlobalError(ctx.error.message || "Unable to sign in");
+          callbacks,
+        );
+      } else {
+        await authClient.signIn.username(
+          {
+            username: data.identifier,
+            password: data.password,
+            rememberMe: data.rememberMe,
           },
-        },
-      );
+          callbacks,
+        );
+      }
     } catch {
       setGlobalError("Unable to reach the server. Please try again.");
     } finally {
@@ -104,12 +117,11 @@ const Login = () => {
           <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
             <CustomInput
               control={form.control}
-              name="email"
-              label="Email Address"
-              placeholder="name@hospital.com"
-              type="email"
-              autoComplete="email"
-              startIcon={<Mail size={18} />}
+              name="identifier"
+              label="Email or Username"
+              placeholder="name@hospital.com or username"
+              autoComplete="username"
+              startIcon={<UserRound size={18} />}
             />
             <CustomInput
               control={form.control}

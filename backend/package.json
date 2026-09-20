@@ -9,7 +9,8 @@
     "start:server": "INNGEST_DEV=1 nodemon --exec bun run src/server.ts",
     "start:inngest": "npx inngest-cli@latest dev",
     "start:ngrok": "ngrok http 5000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed:admin": "bun run scripts/seed-admin.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

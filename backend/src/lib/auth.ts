@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import { admin } from "better-auth/plugins";
+import { admin, username } from "better-auth/plugins";
 import { MongoClient } from "mongodb";
 import { checkout, polar, portal, usage, webhooks } from "@polar-sh/better-auth";
 import invoice from "../models/invoice.ts";
@@ -25,7 +25,12 @@ export const auth = betterAuth({
   database: mongodbAdapter(db),
   baseURL: BETTER_AUTH_URL,
   trustedOrigins: ALLOWED_ORIGINS,
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    // Staff accounts are created by admins; keep the rule in sync with the
+    // frontend user form (create-user-schema.ts).
+    minPasswordLength: 6,
+  },
   advanced: CROSS_SITE_COOKIES
     ? {
         defaultCookieAttributes: {
@@ -36,6 +41,8 @@ export const auth = betterAuth({
       }
     : undefined,
   plugins: [
+    // Lets staff sign in with a username as well as their email.
+    username({ minUsernameLength: 3 }),
     admin({
       defaultRole: "patient",
       adminRoles: ["admin"],
