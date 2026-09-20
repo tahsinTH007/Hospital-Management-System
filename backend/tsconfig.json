@@ -11,6 +11,11 @@
     // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    // Relative imports use ".ts" so Bun and Node run the sources directly.
+    // Vercel compiles each file to ".js" with this tsconfig, and this flag
+    // rewrites the specifiers to match – without it every import fails at
+    // runtime with ERR_MODULE_NOT_FOUND (FUNCTION_INVOCATION_FAILED).
+    "rewriteRelativeImportExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
 

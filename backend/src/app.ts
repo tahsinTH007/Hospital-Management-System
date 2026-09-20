@@ -39,7 +39,8 @@ app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: ALLOWED_ORIGINS,
+    // Demo mode: also accept a frontend host that is missing from FRONTEND_URL.
+    origin: DEMO_MODE ? true : ALLOWED_ORIGINS,
     credentials: true,
   }),
 );
@@ -56,6 +57,28 @@ if (!IS_PRODUCTION) {
   app.use(morgan("dev"));
 }
 
+app.get("/", (_req: Request, res: Response) => {
+  res.send("Hello from the backend!");
+});
+
+// Answers even when the database is down or unconfigured, so a broken
+// deployment can be diagnosed from the browser.
+app.get("/api/health", async (_req: Request, res: Response) => {
+  let database = "connected";
+  try {
+    await connectDB();
+  } catch (error) {
+    database = `error: ${(error as Error).message}`;
+  }
+  res.status(database === "connected" ? 200 : 503).json({
+    status: database === "connected" ? "ok" : "degraded",
+    database,
+    realtime: !IS_SERVERLESS,
+    demo: DEMO_MODE,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Make sure the database is reachable before any handler runs. The
 // connection is cached, so this is a no-op after the first request.
 app.use(async (_req: Request, _res: Response, next: NextFunction) => {
@@ -65,19 +88,6 @@ app.use(async (_req: Request, _res: Response, next: NextFunction) => {
   } catch (error) {
     next(error);
   }
-});
-
-app.get("/", (_req: Request, res: Response) => {
-  res.send("Hello from the backend!");
-});
-
-app.get("/api/health", (_req: Request, res: Response) => {
-  res.json({
-    status: "ok",
-    realtime: !IS_SERVERLESS,
-    demo: DEMO_MODE,
-    timestamp: new Date().toISOString(),
-  });
 });
 
 // Demo mode: visitors without a session become the admin (no-op otherwise).
@@ -132,3 +142,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // the app as a single Function. Locally, `src/server.ts` wraps it in an HTTP
 // server with Socket.IO.
 export default app;
+
+// Read statically by Vercel at build time. Inline AI jobs (demo mode without
+// Inngest) can take 10-20 s, well over the 10 s default of some plans.
+export const config = { maxDuration: 60 };

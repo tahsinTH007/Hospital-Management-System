@@ -13,10 +13,9 @@ import {
   FRONTEND_URL,
 } from "../config/env.ts";
 
-const mongoUri = process.env.MONGO_URI?.trim();
-if (!mongoUri) {
-  throw new Error("MONGO_URI is not set");
-}
+// A missing MONGO_URI is reported per request by connectDB() (and by
+// /api/health) instead of crashing the whole function at import time.
+const mongoUri = process.env.MONGO_URI?.trim() || "mongodb://127.0.0.1:27017/medflow";
 
 // The MongoDB driver connects lazily on first use, so this is serverless-safe.
 const client = new MongoClient(mongoUri);

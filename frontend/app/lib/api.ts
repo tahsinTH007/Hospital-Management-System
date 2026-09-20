@@ -204,7 +204,9 @@ export const markAllAsRead = () =>
 // -------------------------------------------------------------- health
 
 export interface Health {
-  status: "ok";
+  status: "ok" | "degraded";
+  /** "connected" or the connection error. */
+  database: string;
   /** Socket.IO available (false on Vercel Functions). */
   realtime: boolean;
   /** Backend runs in demo mode: every visitor is signed in as the admin. */
