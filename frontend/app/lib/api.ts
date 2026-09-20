@@ -200,3 +200,16 @@ export const markAsRead = (id: string) =>
 
 export const markAllAsRead = () =>
   request<{ message: string }>(`/notifications/read-all`, { method: "POST" });
+
+// -------------------------------------------------------------- health
+
+export interface Health {
+  status: "ok";
+  /** Socket.IO available (false on Vercel Functions). */
+  realtime: boolean;
+  /** Backend runs in demo mode: every visitor is signed in as the admin. */
+  demo: boolean;
+  timestamp: string;
+}
+
+export const getHealth = (): Promise<Health> => request(`/health`);

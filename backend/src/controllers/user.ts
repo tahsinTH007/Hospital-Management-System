@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import type { Request, Response } from "express";
 import { logActivity } from "../lib/activity.ts";
-import { inngest } from "../inngest/client.ts";
+import { dispatchJobs } from "../inngest/dispatch.ts";
 import { auth } from "../lib/auth.ts";
 import { ensurePolarCustomer, polarClient } from "../lib/polar.ts";
 
@@ -174,9 +174,9 @@ export const admitPatient = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { admissionReason } = req.body ?? {};
-    await inngest.send({
+    await dispatchJobs({
       name: "patient/admitted",
-      data: { patientId: id, admissionReason },
+      data: { patientId: id as string, admissionReason },
     });
     await logActivity(
       (req as any).user.id,
@@ -187,8 +187,9 @@ export const admitPatient = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error admitting patient:", error);
     res.status(502).json({
-      message:
-        "Patient saved, but the admission workflow could not be queued (Inngest unreachable). Check INNGEST_* configuration.",
+      message: `Patient saved, but the admission workflow failed: ${
+        (error as Error).message || "Inngest unreachable – check INNGEST_* configuration"
+      }`,
     });
   }
 };

@@ -14,8 +14,9 @@ import { serve } from "inngest/express";
 import { createRouteHandler } from "uploadthing/express";
 
 import { connectDB } from "./config/db.ts";
-import { ALLOWED_ORIGINS, IS_PRODUCTION, IS_SERVERLESS } from "./config/env.ts";
+import { ALLOWED_ORIGINS, DEMO_MODE, IS_PRODUCTION, IS_SERVERLESS } from "./config/env.ts";
 import { auth } from "./lib/auth.ts";
+import { demoSession } from "./middleware/demoSession.ts";
 import { uploadRouter } from "./lib/uploadthing.ts";
 import { inngest } from "./inngest/client.ts";
 import {
@@ -74,9 +75,14 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
     realtime: !IS_SERVERLESS,
+    demo: DEMO_MODE,
     timestamp: new Date().toISOString(),
   });
 });
+
+// Demo mode: visitors without a session become the admin (no-op otherwise).
+// Must run before Better Auth so its endpoints see the injected cookie too.
+app.use(demoSession);
 
 // Better Auth reads the raw request body itself, so it is mounted before the
 // JSON body parser (as its Express integration docs require).

@@ -9,6 +9,7 @@ import {
   ALLOWED_ORIGINS,
   BETTER_AUTH_URL,
   CROSS_SITE_COOKIES,
+  DEMO_MODE,
   FRONTEND_URL,
 } from "../config/env.ts";
 
@@ -24,7 +25,11 @@ const db = client.db();
 export const auth = betterAuth({
   database: mongodbAdapter(db),
   baseURL: BETTER_AUTH_URL,
-  trustedOrigins: ALLOWED_ORIGINS,
+  // In demo mode the deployment should work even when FRONTEND_URL was not
+  // updated for the current host, so the calling origin is trusted as well.
+  trustedOrigins: DEMO_MODE
+    ? (request) => [...ALLOWED_ORIGINS, request?.headers.get("origin")]
+    : ALLOWED_ORIGINS,
   emailAndPassword: {
     enabled: true,
     // Staff accounts are created by admins; keep the rule in sync with the

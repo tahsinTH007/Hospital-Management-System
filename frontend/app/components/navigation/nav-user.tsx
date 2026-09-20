@@ -1,4 +1,4 @@
-import { ChevronsUpDown, LogOut, UserRound } from "lucide-react";
+import { ChevronsUpDown, LogOut, Sparkles, UserRound } from "lucide-react";
 import { Link } from "react-router";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -19,6 +19,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { getInitials } from "@/lib/utils";
+import { useDemoMode } from "@/hooks/use-demo-mode";
 
 interface NavUserProps {
   user: {
@@ -31,6 +32,7 @@ interface NavUserProps {
 
 export function NavUser({ user }: NavUserProps) {
   const { isMobile } = useSidebar();
+  const isDemo = useDemoMode();
 
   const logout = async () => {
     await authClient.signOut({
@@ -97,10 +99,18 @@ export function NavUser({ user }: NavUserProps) {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout}>
-              <LogOut />
-              Log out
-            </DropdownMenuItem>
+            {isDemo ? (
+              // Signing out would only sign the visitor straight back in.
+              <DropdownMenuItem disabled>
+                <Sparkles />
+                Demo mode · always signed in
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onClick={logout}>
+                <LogOut />
+                Log out
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

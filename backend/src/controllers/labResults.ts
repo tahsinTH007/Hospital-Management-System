@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import LabResult from "../models/labResults.ts";
-import { inngest } from "../inngest/client.ts";
+import { dispatchJobs } from "../inngest/dispatch.ts";
 import { logActivity } from "../lib/activity.ts";
 
 const XRAY_PRICE_IN_CENTS = 15000;
@@ -31,24 +31,31 @@ export const createLabResult = async (req: Request, res: Response) => {
     }
 
     if (newLabResult.testType === "X-Ray") {
-      await inngest.send([
-        {
-          name: "labResult/created",
-          data: {
-            labResultId: newLabResult._id.toString(),
-            imageUrl: newLabResult.imageUrl,
-            bodyPart: newLabResult.bodyPart,
+      try {
+        await dispatchJobs([
+          {
+            name: "labResult/created",
+            data: {
+              labResultId: newLabResult._id.toString(),
+              // Validated above; the model type marks it optional.
+              imageUrl: newLabResult.imageUrl as string,
+              bodyPart: newLabResult.bodyPart,
+            },
           },
-        },
-        {
-          name: "billing/charge.added",
-          data: {
-            patientId: newLabResult.patient.toString(),
-            description: `Radiology: ${newLabResult.bodyPart} X-Ray Analysis`,
-            priceInCents: XRAY_PRICE_IN_CENTS,
+          {
+            name: "billing/charge.added",
+            data: {
+              patientId: newLabResult.patient.toString(),
+              description: `Radiology: ${newLabResult.bodyPart} X-Ray Analysis`,
+              priceInCents: XRAY_PRICE_IN_CENTS,
+            },
           },
-        },
-      ]);
+        ]);
+      } catch (error) {
+        // The result is saved either way; a failed analysis just stays
+        // "pending", exactly as when a queued job fails later.
+        console.error("X-ray analysis could not be run:", error);
+      }
     }
 
     await logActivity(

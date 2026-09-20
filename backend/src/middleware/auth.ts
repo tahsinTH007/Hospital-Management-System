@@ -8,9 +8,12 @@ export const requireAuth = async (
   next: NextFunction,
 ) => {
   try {
-    const session = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
+    // Demo mode already resolved (or injected) the session for this request.
+    const session =
+      (req as any).session ??
+      (await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
+      }));
 
     if (!session) {
       return res.status(401).json({ message: "Unauthorized" });

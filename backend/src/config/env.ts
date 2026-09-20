@@ -25,3 +25,11 @@ export const IS_SERVERLESS = Boolean(process.env.VERCEL);
  * site (no proxy in between) so the session cookie can be sent cross-site.
  */
 export const CROSS_SITE_COOKIES = process.env.CROSS_SITE_COOKIES === "true";
+
+/**
+ * Demo mode (ON unless DEMO_MODE=false): every visitor is signed in
+ * automatically as the admin account (see lib/adminAccount.ts) and background
+ * jobs run inline when Inngest is unreachable, so the app can be shown
+ * without a login step or workflow infrastructure.
+ */
+export const DEMO_MODE = process.env.DEMO_MODE !== "false";

@@ -3,16 +3,19 @@ import { Separator } from "@/components/ui/separator";
 import { Link, useLocation } from "react-router";
 import { authClient } from "@/lib/auth-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
 import Notifications from "./Notifications";
 import { getPageTitle } from "./nav-config";
 import { cn, getInitials, humanize } from "@/lib/utils";
+import { useDemoMode } from "@/hooks/use-demo-mode";
 
 const Header = () => {
   const { pathname } = useLocation();
   const { data: session } = authClient.useSession();
   const user = session?.user;
+  const isDemo = useDemoMode();
 
   return (
     <header className="flex h-16 items-center gap-2 border-b w-full px-3">
@@ -20,7 +23,14 @@ const Header = () => {
       <Separator orientation="vertical" className="hidden sm:block" />
       <div className="flex justify-between items-center w-full min-w-0 gap-2">
         <div className="flex flex-col space-y-0.5 min-w-0">
-          <h1 className="font-bold text-lg truncate">{getPageTitle(pathname)}</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="font-bold text-lg truncate">{getPageTitle(pathname)}</h1>
+            {isDemo && (
+              <Badge variant="secondary" title="Every visitor is signed in as the admin">
+                Demo
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground truncate hidden sm:block">
             Welcome back, {user?.role === "doctor" ? "Dr. " : ""}
             {user?.name}

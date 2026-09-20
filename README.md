@@ -98,6 +98,7 @@ cp .env.example .env   # then fill in the values
 | `INNGEST_EVENT_KEY`    |   prod   | Inngest event key (not needed with the local dev server)                                    |
 | `INNGEST_SIGNING_KEY`  |   prod   | Inngest signing key (not needed with the local dev server)                                  |
 | `CROSS_SITE_COOKIES`   |          | `true` only when the frontend calls the API on another origin without the `/api` proxy      |
+| `DEMO_MODE`            |          | `false` to require real sign-in. Default: on – see [Demo mode](#demo-mode)                 |
 
 ### 3. Create the first administrator
 
@@ -139,7 +140,19 @@ cd backend && bun run dev
 cd frontend && bun run dev
 ```
 
-Open <http://localhost:5173> and sign in with the admin credentials. The frontend needs no `.env` locally: `/api/*` is proxied to the backend by Vite, so the session cookie stays first-party (see `frontend/.env.example` for optional overrides).
+Open <http://localhost:5173>. In the default [demo mode](#demo-mode) you land on the dashboard already signed in as the admin; with `DEMO_MODE=false` you get the login page and sign in with the admin credentials. The frontend needs no `.env` locally: `/api/*` is proxied to the backend by Vite, so the session cookie stays first-party (see `frontend/.env.example` for optional overrides).
+
+### Demo mode
+
+The backend starts in **demo mode** unless `DEMO_MODE=false` is set, so the project can be shown without anyone having to sign in:
+
+- Every request without a valid session is served as the admin account (`ADMIN_USERNAME` / `ADMIN_PASSWORD`, default `tahsin` / `tahsin`). The account is created automatically if the database does not have it yet, and its password is reset if the configured one stops working.
+- `/` opens the dashboard directly, `/login` redirects there, and the user menu shows *Demo mode* instead of *Log out* (signing out would just sign you straight back in).
+- Background jobs (AI triage, x-ray analysis, billing charges) run **inline** when Inngest cannot be reached – no Inngest dev server or `INNGEST_*` keys needed. Requests that trigger them take a few seconds longer; with Inngest configured they are queued as usual.
+- The calling origin is trusted by Better Auth, so a deployment keeps working even if `FRONTEND_URL` does not list the current host.
+- `GET /api/health` reports `"demo": true`.
+
+Set `DEMO_MODE=false` (locally in `backend/.env`, on Vercel in the backend project's environment variables) to get real authentication and role checks back – nothing else changes.
 
 ### Scripts
 
@@ -181,14 +194,15 @@ Environment variables:
 | `POLAR_PRODUCT_ID`     | Polar product id                                         |
 | `POLAR_WEBHOOK_SECRET` | Polar webhook secret                                     |
 | `POLAR_SERVER`         | `sandbox` or `production`                                |
-| `INNGEST_EVENT_KEY`    | from the Inngest dashboard                               |
-| `INNGEST_SIGNING_KEY`  | from the Inngest dashboard                               |
+| `INNGEST_EVENT_KEY`    | from the Inngest dashboard (optional in demo mode)       |
+| `INNGEST_SIGNING_KEY`  | from the Inngest dashboard (optional in demo mode)       |
+| `DEMO_MODE`            | `false` to require sign-in (default: everyone is admin)  |
 
 After the first deploy:
 
 1. Inngest dashboard → *Sync app* with `https://<backend-project>.vercel.app/api/inngest`
 2. Polar dashboard → webhook URL `https://<backend-project>.vercel.app/api/auth/polar/webhooks`
-3. Run `bun run seed:admin` locally with `MONGO_URI` pointing at the production database
+3. Run `bun run seed:admin` locally with `MONGO_URI` pointing at the production database (in demo mode the admin is created on first use anyway)
 
 > **Note:** Vercel Functions cannot keep WebSocket connections open, so Socket.IO is disabled there and the UI falls back to refetching/polling (`GET /api/health` reports `"realtime": false`). For true real-time updates host the backend on a long-lived server (Render, Railway, Fly.io, a VPS) with `bun run start`.
 
