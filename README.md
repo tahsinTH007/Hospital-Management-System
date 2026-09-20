@@ -110,6 +110,25 @@ bun run seed:admin -- --username admin --password "s3cret!" --email admin@hospit
 
 The script is idempotent — running it again updates the role/password of the existing account. Every other account is created by an admin from the UI.
 
+#### Optional: load demo data
+
+```bash
+bun run seed:demo
+```
+
+Fills every collection with realistic sample data: an extra admin, 5 doctors, 4 nurses, a lab technician, a pharmacist, 10 patients (with AI triage assignments), 15 invoices across the year, X-ray results with analyses, notifications and an activity trail. All demo accounts use the password `medflow123` (override with `DEMO_PASSWORD`). Safe to re-run — generated records are replaced, existing passwords are kept.
+
+| Role       | Username              | Email                             |
+| ---------- | --------------------- | --------------------------------- |
+| admin      | `amina.khan`          | amina.khan@medflow.com            |
+| doctor     | `grace.hopper`        | grace.hopper@medflow.com          |
+| doctor     | `alan.turing`         | alan.turing@medflow.com           |
+| nurse      | `florence.nightingale`| florence.nightingale@medflow.com  |
+| lab tech   | `ravi.patel`          | ravi.patel@medflow.com            |
+| pharmacist | `nadia.rahman`        | nadia.rahman@medflow.com          |
+| patient    | `john.carter`         | john.carter@medflow.com           |
+| patient    | `carlos.silva`        | carlos.silva@medflow.com          |
+
 ### 4. Run it
 
 ```bash
@@ -129,6 +148,7 @@ Open <http://localhost:5173> and sign in with the admin credentials. The fronten
 | `backend`  | `bun run dev`        | API with hot reload + Inngest dev server                      |
 | `backend`  | `bun run start`      | API only (production style)                                   |
 | `backend`  | `bun run seed:admin` | Create/update the admin account                               |
+| `backend`  | `bun run seed:demo`  | Load sample data into every collection                        |
 | `backend`  | `bun run typecheck`  | TypeScript check                                              |
 | `frontend` | `bun run dev`        | Vite dev server with `/api` proxy                             |
 | `frontend` | `bun run build`      | Production build (`build/client` + `build/server`)            |
@@ -204,6 +224,7 @@ Pharmacy, laboratory, appointments/telemedicine and settings appear in the navig
 ```
 backend/
   scripts/seed-admin.ts     first admin account
+  scripts/seed-demo.ts      sample data for every collection
   src/app.ts                Express app (Vercel entry, no listen)
   src/server.ts             local runner: HTTP server + Socket.IO
   src/config/               env + cached MongoDB connection

@@ -10,7 +10,8 @@
     "start:inngest": "npx inngest-cli@latest dev",
     "start:ngrok": "ngrok http 5000",
     "typecheck": "tsc --noEmit",
-    "seed:admin": "bun run scripts/seed-admin.ts"
+    "seed:admin": "bun run scripts/seed-admin.ts",
+    "seed:demo": "bun run scripts/seed-demo.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
