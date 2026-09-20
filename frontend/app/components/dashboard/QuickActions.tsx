@@ -5,10 +5,11 @@ const QuickActions = ({ role }: { role: Role | null | undefined }) => {
   if (role === "patient") return null;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {role === "admin" && (
         <>
           <CreateUserModal role="doctor" />
+          <CreateUserModal role="nurse" />
         </>
       )}
       {["doctor", "nurse", "admin"].includes(role || "") && (

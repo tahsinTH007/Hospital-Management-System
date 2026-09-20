@@ -3,247 +3,200 @@ import type {
   Role,
   User,
   LabResult,
-  WebPushSubscription,
   ActivityLog,
-  invoice,
-  appointment,
+  Invoice,
+  BillingStats,
+  NotificationsResponse,
 } from "@/types";
+import { API_URL } from "./config";
 
-export const API_URL = "http://localhost:5000/api";
+export { API_URL };
 
-export const getUsers = async (params: {
-  role: Role;
-  page?: number;
-  limit?: number;
-}): Promise<PaginatedResponse<User>> => {
-  const query = new URLSearchParams({
-    role: params.role,
-    page: (params.page || 1).toString(),
-    limit: (params.limit || 10).toString(),
-  }).toString();
+/** fetch() wrapper: always sends the session cookie and surfaces API errors. */
+const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
-  const res = await fetch(`${API_URL}/users?${query}`, {
+  const res = await fetch(`${API_URL}${path}`, {
     credentials: "include",
+    ...init,
+    headers,
   });
 
-  if (!res.ok) throw new Error("Failed");
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.message) message = body.message;
+    } catch {
+      // non-JSON error body
+    }
+    const error = new Error(message) as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
 
+  if (res.status === 204) return undefined as T;
   return res.json();
 };
 
-export const triggerAdmission = async ({
+const toQuery = (params: Record<string, string | number | undefined>) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  });
+  const query = search.toString();
+  return query ? `?${query}` : "";
+};
+
+// ---------------------------------------------------------------- users
+
+export const getUsers = (params: {
+  role: Role;
+  page?: number;
+  limit?: number;
+  search?: string;
+}): Promise<PaginatedResponse<User>> =>
+  request(
+    `/users${toQuery({
+      role: params.role,
+      page: params.page ?? 1,
+      limit: params.limit ?? 10,
+      search: params.search?.trim(),
+    })}`,
+  );
+
+export const getUserById = (userId: string): Promise<User> =>
+  request(`/users/profile/${userId}`);
+
+interface UpdateUserParams {
+  userId: string;
+  userData: Partial<User> & Record<string, unknown>;
+}
+
+export const updateUser = ({ userId, userData }: UpdateUserParams) =>
+  request<{ message: string; updatedUser: User }>(`/users/update/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(userData),
+  });
+
+export const triggerAdmission = ({
   patientId,
   admissionReason,
 }: {
   patientId: string;
   admissionReason: string;
-}) => {
-  const res = await fetch(`${API_URL}/users/${patientId}/admit`, {
+}) =>
+  request<{ message: string }>(`/users/${patientId}/admit`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ admissionReason }),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to start admission process");
-  return res.json();
-};
-
-interface UpdateUserParams {
-  userId: string;
-  userData: Partial<User> & Record<string, any>;
-}
-
-export const updateUser = async ({ userId, userData }: UpdateUserParams) => {
-  const res = await fetch(`${API_URL}/users/update/${userId}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(userData),
-    credentials: "include",
   });
 
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || "Failed to update user");
-  }
+export const polarPortalLink = (userId: string) =>
+  request<{ polarPortalUrl: string }>(`/users/polar-portal/${userId}`);
 
-  return res.json();
-};
+// ------------------------------------------------------- activity logs
 
-export const createActityLog = async (data: {
-  userId: string;
-  action: string;
-  details?: string;
-}) => {
-  const res = await fetch(`${API_URL}/activity-logs/create`, {
+export const createActivityLog = (data: { action: string; details?: string }) =>
+  request<{ message: string }>(`/activity-logs/create`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-    credentials: "include",
   });
-  if (!res.ok) throw new Error("Failed to create activity log");
-  return res.json();
-};
 
-export const getPatientLabResults = async (
-  patientId: string,
-): Promise<LabResult[]> => {
-  const res = await fetch(`${API_URL}/lab-results/patient/${patientId}`, {
-    method: "GET",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch lab results");
-  return res.json();
-};
+export const getActivityLogs = (params: {
+  page?: number;
+  limit?: number;
+}): Promise<PaginatedResponse<ActivityLog>> =>
+  request(
+    `/activity-logs${toQuery({
+      page: params.page ?? 1,
+      limit: params.limit ?? 10,
+    })}`,
+  );
 
-export const updateLabResult = async ({
+// --------------------------------------------------------- lab results
+
+export const getPatientLabResults = (patientId: string): Promise<LabResult[]> =>
+  request(`/lab-results/patient/${patientId}`);
+
+export const updateLabResult = ({
   id,
   data,
 }: {
   id: string;
   data: { doctorNotes?: string; status?: string };
-}) => {
-  const res = await fetch(`${API_URL}/lab-results/${id}`, {
+}) =>
+  request<LabResult>(`/lab-results/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-    credentials: "include",
   });
-  if (!res.ok) throw new Error("Failed to update lab result");
-  return res.json();
-};
 
-export const createLabResult = async (data: {
+export const createLabResult = (data: {
   patientId: string;
   testType: string;
   bodyPart: string;
   imageUrl: string;
-  aiAnalysis?: string;
-}) => {
-  const res = await fetch(`${API_URL}/lab-results`, {
+}) =>
+  request<LabResult>(`/lab-results`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify(data),
-    credentials: "include",
   });
 
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || "Failed to create lab result");
-  }
-
-  return res.json();
-};
-
-export const deleteFile = async ({ file }: { file: string }) => {
-  const res = await fetch(`${API_URL}/uploadthing/delete`, {
+export const deleteFile = ({ file }: { file: string }) =>
+  request<{ message: string }>(`/uploadthing/delete`, {
     method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({ fileUrl: file }),
-    credentials: "include",
   });
 
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || "Failed to delete file");
-  }
+// ------------------------------------------------------------ invoices
 
-  return res.json();
+const nullOn404 = async <T>(promise: Promise<T>): Promise<T | null> => {
+  try {
+    return await promise;
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return null;
+    throw error;
+  }
 };
 
-export const getActivityLogs = async (params: {
+/** Active (unpaid) invoice of a patient; null when there is none. */
+export const getActiveInvoice = (patientId: string) =>
+  nullOn404(request<Invoice>(`/invoices/active/${patientId}`));
+
+export const getMyActiveInvoice = () =>
+  nullOn404(request<Invoice>(`/invoices/my-active-invoice`));
+
+export const createCheckoutSession = (invoiceId: string) =>
+  request<{ checkoutUrl: string }>(`/invoices/${invoiceId}/checkout`, {
+    method: "POST",
+  });
+
+export const getBillingHistory = (userId: string): Promise<Invoice[]> =>
+  request(`/invoices/history/${userId}`);
+
+export const getAllInvoices = (params?: {
   page?: number;
   limit?: number;
-}): Promise<PaginatedResponse<ActivityLog>> => {
-  const query = new URLSearchParams({
-    page: (params.page || 1).toString(),
-    limit: (params.limit || 10).toString(),
-  }).toString();
+}): Promise<PaginatedResponse<Invoice>> =>
+  request(
+    `/invoices${toQuery({
+      page: params?.page ?? 1,
+      limit: params?.limit ?? 10,
+    })}`,
+  );
 
-  const res = await fetch(`${API_URL}/activity-logs?${query}`, {
-    credentials: "include",
-  });
+export const getBillingStats = (year?: number): Promise<BillingStats> =>
+  request(`/invoices/stats${toQuery({ year })}`);
 
-  if (!res.ok) throw new Error("Failed to fetch activity logs");
+// ------------------------------------------------------- notifications
 
-  return res.json();
-};
+export const fetchNotifications = (): Promise<NotificationsResponse> =>
+  request(`/notifications`);
 
-export const getUserById = async (userId: string) => {
-  const res = await fetch(`${API_URL}/users/profile/${userId}`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch user");
-  return res.json();
-};
+export const markAsRead = (id: string) =>
+  request<{ message: string }>(`/notifications/${id}/read`, { method: "POST" });
 
-export const getMyActiveInvoice = async () => {
-  const res = await fetch(`${API_URL}/invoices/my-active-invoice`, {
-    credentials: "include",
-  });
-  if (!res.ok) {
-    if (res.status === 404) return null;
-    throw new Error("Failed to fetch invoice");
-  }
-  return res.json();
-};
-
-export const createCheckoutSession = async (invoiceId: string) => {
-  const res = await fetch(`${API_URL}/invoices/${invoiceId}/checkout`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to initiate checkout");
-  return res.json();
-};
-
-export const getBillingHistory = async (userId: string) => {
-  const res = await fetch(`${API_URL}/invoices/history/${userId}`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch billing history");
-  return res.json();
-};
-
-export const getAllInvoices = async (data?: {
-  page?: number;
-  limit?: number;
-}): Promise<PaginatedResponse<invoice>> => {
-  const res = await fetch(`${API_URL}/invoices`, {
-    credentials: "include",
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error("Failed to fetch invoices");
-  return res.json();
-};
-
-export const polarPortalLink = async (userId: string) => {
-  const res = await fetch(`${API_URL}/users/polar-portal/${userId}`, {
-    method: "GET",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch polar portal link");
-  return res.json();
-};
-
-export const fetchNotifications = async () => {
-  const res = await fetch(`${API_URL}/notifications`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch notifications");
-  return res.json();
-};
-
-export const markAsRead = async (id: string) => {
-  const res = await fetch(`${API_URL}/notifications/${id}/read`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to mark as read");
-  return res.json();
-};
+export const markAllAsRead = () =>
+  request<{ message: string }>(`/notifications/read-all`, { method: "POST" });

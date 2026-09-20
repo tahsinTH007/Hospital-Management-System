@@ -1,18 +1,11 @@
-import { Button } from "@/components/ui/button";
+import { redirect } from "react-router";
 
-import type { Route } from "./+types/home";
-
-export function meta({}: Route.MetaArgs) {
-  return [
-    { title: "New React Router App" },
-    { name: "description", content: "Welcome to React Router!" },
-  ];
+// The index route has no content of its own; send visitors to the login
+// page (which forwards signed-in users to their home page).
+export function loader() {
+  return redirect("/login");
 }
 
 export default function Home() {
-  return (
-    <div className="flex min-h-svh flex-col items-center justify-center">
-      <Button>Click me</Button>
-    </div>
-  );
+  return null;
 }

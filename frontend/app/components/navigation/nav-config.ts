@@ -11,7 +11,9 @@ import {
   LifeBuoy,
   Send,
   ReceiptCent,
+  ShieldCheck,
 } from "lucide-react";
+import { humanize } from "@/lib/utils";
 
 export interface NavItem {
   title: string;
@@ -38,30 +40,22 @@ export const navConfig: {
       allowedRoles: ["admin", "doctor", "nurse", "pharmacist", "lab_tech"],
       items: [
         { title: "Overview", url: "/dashboard" },
-        { title: "Activities Log", url: "/activities-log" },
+        { title: "Activities Log", url: "/activities-log", allowedRoles: ["admin"] },
       ],
     },
     {
       title: "Administrators",
       url: "/admins",
-      icon: Users,
+      icon: ShieldCheck,
       allowedRoles: ["admin"],
-      items: [
-        { title: "All Administrators", url: "/admins" },
-        // { title: "Admissions", url: "/patients/admissions" },
-        // { title: "Registration", url: "/patients/new" },
-      ],
+      items: [{ title: "All Administrators", url: "/admins" }],
     },
     {
       title: "Patients",
       url: "/patients",
       icon: Users,
       allowedRoles: ["admin", "doctor", "nurse"],
-      items: [
-        { title: "All Patients", url: "/patients" },
-        // { title: "Admissions", url: "/patients/admissions" },
-        // { title: "Registration", url: "/patients/new" },
-      ],
+      items: [{ title: "All Patients", url: "/patients" }],
     },
     {
       title: "Nursing Station",
@@ -102,8 +96,8 @@ export const navConfig: {
       title: "Financial Records",
       url: "/records",
       icon: ReceiptCent,
-      allowedRoles: ["admin", "doctor"],
-      items: [{ title: "History", url: "/financial-history" }],
+      allowedRoles: ["admin"],
+      items: [{ title: "Financial History", url: "/financial-history" }],
     },
     {
       title: "Appointments",
@@ -142,6 +136,17 @@ export const navConfig: {
   ],
 };
 
+/** Routes that exist today; everything else in the nav is "coming soon". */
+export const IMPLEMENTED_ROUTES = new Set([
+  "/dashboard",
+  "/activities-log",
+  "/admins",
+  "/patients",
+  "/nurses",
+  "/doctors",
+  "/financial-history",
+]);
+
 export function getRouteConfig(path: string, items: NavItem[]): NavItem | null {
   for (const item of items) {
     if (item.url === path) return item;
@@ -155,4 +160,19 @@ export function getRouteConfig(path: string, items: NavItem[]): NavItem | null {
     }
   }
   return null;
+}
+
+const ALL_ITEMS = [
+  ...navConfig.navMain,
+  ...navConfig.navAdmin,
+  ...navConfig.navSecondary,
+];
+
+/** Human readable page title for the header, derived from the navigation. */
+export function getPageTitle(pathname: string) {
+  if (pathname.startsWith("/profile/")) return "Profile";
+  if (pathname === "/dashboard") return "Dashboard";
+  const config = getRouteConfig(pathname, ALL_ITEMS);
+  if (config) return config.title;
+  return humanize(pathname.split("/").filter(Boolean).pop() ?? "") || "MedFlow";
 }

@@ -1,4 +1,4 @@
-import type { Route } from "../+types/root";
+import type { Route } from "./+types/Login";
 import { Activity, Lock, Mail, ChevronRight, AlertCircle } from "lucide-react";
 import { CustomInput } from "@/components/global/CustomInput";
 import { Button } from "@/components/ui/button";
@@ -6,18 +6,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { useForm } from "react-hook-form";
 import { useState } from "react";
-import z from "zod";
+import type z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { useNavigate, Navigate } from "react-router";
 import { loginSchema } from "@/components/auth/login.schema";
 import Loader from "@/components/global/Loader";
+import { getHomePath } from "@/lib/routing";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Login" },
-    { name: "description", content: "Login to our amazing Medflow" },
+    { title: "Login | MedFlow AI" },
+    { name: "description", content: "Sign in to the MedFlow provider portal" },
   ];
 }
 
@@ -43,34 +44,40 @@ const Login = () => {
   }
 
   if (session) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={getHomePath(session.user)} replace />;
   }
 
   const onSubmit = async (data: LoginFormValues) => {
     setGlobalError("");
     setIsLoading(true);
-    await authClient.signIn.email(
-      {
-        email: data.email,
-        password: data.password,
-        rememberMe: data.rememberMe,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Login Successful!");
-          navigate("/dashboard");
+    try {
+      await authClient.signIn.email(
+        {
+          email: data.email,
+          password: data.password,
+          rememberMe: data.rememberMe,
         },
-        onError: (ctx) => {
-          setGlobalError(ctx.error.message);
+        {
+          onSuccess: (ctx) => {
+            toast.success("Login successful");
+            navigate(getHomePath(ctx.data?.user), { replace: true });
+          },
+          onError: (ctx) => {
+            setGlobalError(ctx.error.message || "Unable to sign in");
+          },
         },
-      },
-    );
-    setIsLoading(false);
+      );
+    } catch {
+      setGlobalError("Unable to reach the server. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
-      <Card className="rounded-lg shadow-2xl card backdrop-blur-xl">
-        <CardContent className="p-10 min-w-100 md:min-w-140.5">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-50 dark:bg-slate-950 transition-colors">
+      <Card className="rounded-lg shadow-2xl card backdrop-blur-xl w-full max-w-md">
+        <CardContent className="p-6 sm:p-10">
           {/* logo */}
           <div className="flex flex-col items-center mb-10">
             <div className="bg-linear-to-tr from-blue-600 to-indigo-600 p-3 rounded-2xl shadow-lg shadow-blue-500/30 mb-4">
@@ -85,20 +92,23 @@ const Login = () => {
           </div>
           {/* global error */}
           {globalError && (
-            <div className="mb-6 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 border border-red-100 dark:border-red-900/50 animate-in slide-in-from-top-2 fade-in">
+            <div
+              role="alert"
+              className="mb-6 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 p-4 rounded-2xl text-sm flex items-center gap-3 border border-red-100 dark:border-red-900/50 animate-in slide-in-from-top-2 fade-in"
+            >
               <AlertCircle size={18} className="shrink-0" />
               <span className="font-medium">{globalError}</span>
             </div>
           )}
           {/* form */}
           <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
-            {/* input(custom) */}
             <CustomInput
               control={form.control}
               name="email"
               label="Email Address"
               placeholder="name@hospital.com"
               type="email"
+              autoComplete="email"
               startIcon={<Mail size={18} />}
             />
             <CustomInput
@@ -107,6 +117,7 @@ const Login = () => {
               label="Password"
               placeholder="••••••••"
               type="password"
+              autoComplete="current-password"
               startIcon={<Lock size={18} />}
             />
             <div className="flex items-center justify-between py-2">
@@ -114,7 +125,7 @@ const Login = () => {
                 <Checkbox
                   id="remember"
                   onCheckedChange={(checked) =>
-                    form.setValue("rememberMe", checked as boolean)
+                    form.setValue("rememberMe", checked === true)
                   }
                   className="border-slate-200 dark:border-slate-700 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                 />
@@ -125,12 +136,6 @@ const Login = () => {
                   Keep me signed in
                 </label>
               </div>
-              <button
-                type="button"
-                className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-              >
-                Forgot?
-              </button>
             </div>
             <Button
               type="submit"

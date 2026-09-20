@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { getPatientLabResults, updateLabResult } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,13 +18,22 @@ import Loader from "@/components/global/Loader";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { LabResult } from "@/types";
-import { socket } from "@/lib/socket";
+import { useSocketEvents } from "@/lib/socket";
 import XRayUploadModal from "../XRayUploadModal";
+
+const STATUS_STYLES: Record<LabResult["status"], string> = {
+  pending: "",
+  analyzed:
+    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  reviewed:
+    "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+};
 
 const Radiology = ({ patientId }: { patientId: string }) => {
   const { data: session } = authClient.useSession();
-  const isDoctor =
-    session?.user?.role === "doctor" || session?.user?.role === "admin";
+  const canManage = ["doctor", "admin", "lab_tech"].includes(
+    session?.user?.role ?? "",
+  );
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notesContent, setNotesContent] = useState("");
@@ -38,19 +47,9 @@ const Radiology = ({ patientId }: { patientId: string }) => {
     queryFn: () => getPatientLabResults(patientId),
   });
 
-  useEffect(() => {
-    if (!socket.connected) socket.connect();
-
-    const handleLabUpdate = () => refetch();
-
-    socket.on("lab_result_added", handleLabUpdate);
-    socket.on("lab_result_updated", handleLabUpdate);
-
-    return () => {
-      socket.off("lab_result_added", handleLabUpdate);
-      socket.off("lab_result_updated", handleLabUpdate);
-    };
-  }, [refetch]);
+  // AI analysis lands asynchronously (Inngest) – refresh when the server
+  // says so, or poll every 15s when sockets are unavailable.
+  useSocketEvents(["lab_result_added", "lab_result_updated"], refetch, 15_000);
 
   const updateNotesMutation = useMutation({
     mutationFn: updateLabResult,
@@ -83,13 +82,14 @@ const Radiology = ({ patientId }: { patientId: string }) => {
       },
     });
   };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2 text-sm">
           <Scan className="h-4 w-4" /> Recent Scans
         </h3>
-        <XRayUploadModal patientId={patientId} />
+        {canManage && <XRayUploadModal patientId={patientId} />}
       </div>
       {isLoading ? (
         <Loader label="Loading..." />
@@ -99,8 +99,7 @@ const Radiology = ({ patientId }: { patientId: string }) => {
         </p>
       ) : (
         xrays.map((xray) => (
-          <Card key={xray._id} className="overflow-hidden text-shadow-sm">
-            {/* Image Section */}
+          <Card key={xray._id} className="overflow-hidden">
             <div className="relative h-48 bg-black w-full flex items-center justify-center">
               <img
                 src={xray.imageUrl}
@@ -111,32 +110,26 @@ const Radiology = ({ patientId }: { patientId: string }) => {
                 {new Date(xray.createdAt).toLocaleDateString()}
               </div>
             </div>
-            {/* Header Section */}
             <CardHeader className="p-4 pb-2">
               <CardTitle className="text-sm font-bold flex justify-between items-center">
                 {xray.bodyPart}
                 <Badge
                   variant="secondary"
-                  className={
-                    xray.status === "reviewed"
-                      ? "bg-green-100 text-green-700"
-                      : xray.status === "analyzed"
-                        ? "bg-blue-100 text-blue-700"
-                        : ""
-                  }
+                  className={`capitalize ${STATUS_STYLES[xray.status] ?? ""}`}
                 >
                   {xray.status}
                 </Badge>
               </CardTitle>
             </CardHeader>
-            {/* Content / Notes Section */}
             <CardContent className="p-4 pt-0 space-y-3">
               <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/50 rounded-md">
                 <div className="flex items-center gap-2 mb-1 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] uppercase tracking-wider">
                   <BrainCircuit className="h-3.5 w-3.5" /> AI Analysis
                 </div>
-                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {xray.aiAnalysis || "Analysis pending..."}
+                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                  {xray.status === "pending"
+                    ? "Analysis in progress..."
+                    : xray.aiAnalysis || "No analysis available."}
                 </p>
               </div>
               <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50 rounded-md relative group">
@@ -145,11 +138,12 @@ const Radiology = ({ patientId }: { patientId: string }) => {
                     <Stethoscope className="h-3.5 w-3.5" /> Doctor's Notes
                   </div>
 
-                  {isDoctor && editingId !== xray._id && (
+                  {canManage && editingId !== xray._id && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-blue-600 hover:text-blue-800 hover:bg-blue-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="Edit notes"
+                      className="h-6 w-6 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40"
                       onClick={() => startEditing(xray)}
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -176,7 +170,7 @@ const Radiology = ({ patientId }: { patientId: string }) => {
                       </Button>
                       <Button
                         size="sm"
-                        className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                        className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
                         onClick={() => saveNotes(xray._id)}
                         disabled={updateNotesMutation.isPending}
                       >

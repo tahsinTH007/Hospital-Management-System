@@ -18,7 +18,6 @@ import {
   Building2,
   FileHeart,
   UserIcon,
-  Pencil,
 } from "lucide-react";
 import { CustomInput } from "@/components/global/CustomInput";
 import { CustomSelect } from "@/components/global/CustomSelect";
@@ -35,9 +34,9 @@ import {
 } from "./create-user-schema";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { useMutation } from "@tanstack/react-query";
-import { createActityLog, triggerAdmission, updateUser } from "@/lib/api";
-import { socket } from "@/lib/socket";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createActivityLog, triggerAdmission, updateUser } from "@/lib/api";
+import { emitSocket } from "@/lib/socket";
 
 interface UserModalProps {
   role: Role;
@@ -45,79 +44,81 @@ interface UserModalProps {
   loading?: boolean;
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrator",
+  doctor: "Doctor",
+  nurse: "Nurse",
+  patient: "Patient",
+  lab_tech: "Lab Technician",
+  pharmacist: "Pharmacist",
+};
+
+const emptyValues = (role: Role): UserValues => ({
+  name: "",
+  email: "",
+  password: "",
+  specialization: "",
+  department: "",
+  age: "",
+  gender: "",
+  bloodgroup: "",
+  medicalHistory: "",
+  status: role === "patient" ? "admitted" : "active",
+});
+
 const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
   const [open, setOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const queryClient = useQueryClient();
   const isEdit = !!user;
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  const roleLabel = ROLE_LABELS[role] ?? role;
 
-  const schema = userSchema(isEdit);
   const form = useForm<UserValues>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      name: "",
-      email: "",
-      password: "",
-      specialization: "",
-      department: "",
-      age: "",
-      gender: "",
-      bloodgroup: "",
-      medicalHistory: "",
-      status: role === "patient" ? "admitted" : "active",
-    },
+    resolver: zodResolver(userSchema(isEdit)),
+    defaultValues: emptyValues(role),
   });
 
   useEffect(() => {
-    if (open) {
-      if (user) {
-        form.reset({
-          name: user.name,
-          email: user.email,
-          password: "",
-          status: user.status as string,
-          specialization: user.specialization || "",
-          department: user.department || "",
-          age: user.age || "",
-          gender: user.gender || "",
-          bloodgroup: user.bloodgroup || "",
-          medicalHistory: user.medicalHistory || "",
-        });
-      } else {
-        form.reset({
-          name: "",
-          email: "",
-          password: "",
-          status: role === "patient" ? "admitted" : "active",
-          specialization: "",
-          department: "",
-          age: "",
-          gender: "",
-          bloodgroup: "",
-          medicalHistory: "",
-        });
-      }
-    }
+    if (!open) return;
+    form.reset(
+      user
+        ? {
+            name: user.name,
+            email: user.email,
+            password: "",
+            status: user.status,
+            specialization: user.specialization || "",
+            department: user.department || "",
+            age: user.age || "",
+            gender: user.gender || "",
+            bloodgroup: user.bloodgroup || "",
+            medicalHistory: user.medicalHistory || "",
+          }
+        : emptyValues(role),
+    );
   }, [open, user, form, role]);
+
+  const invalidateUsers = () => {
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    if (user) queryClient.invalidateQueries({ queryKey: ["user", user._id] });
+  };
 
   const admitMutation = useMutation({
     mutationFn: triggerAdmission,
-    onSuccess: (data, variables) => {
-      toast.success("User admitted successfully!");
-      setOpen(false);
-      form.reset();
+    onSuccess: () => {
+      toast.info("AI triage started – doctor and nurse will be assigned shortly.");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to update user");
+      toast.error(error.message || "Failed to start admission");
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: updateUser,
-    onSuccess: (data, variables) => {
+    onSuccess: () => {
       toast.success("User updated successfully!");
       setOpen(false);
-      form.reset();
+      invalidateUsers();
     },
     onError: (error) => {
       toast.error(error.message || "Failed to update user");
@@ -125,17 +126,16 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
   });
 
   const activityMutation = useMutation({
-    mutationFn: createActityLog,
+    mutationFn: createActivityLog,
     onError: (error) => {
-      console.log("Activity Log Error:", error);
+      console.error("Activity Log Error:", error);
     },
   });
 
   const onSubmit = async (data: UserValues) => {
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       name: data.name,
       email: data.email,
-      role: role,
       status: data.status,
     };
 
@@ -155,58 +155,57 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
       if (data.password) {
         payload.password = data.password;
       }
+      updateMutation.mutate({ userId: user._id, userData: payload });
+      return;
+    }
 
-      updateMutation.mutate({
-        userId: user._id,
-        userData: payload,
-      });
-    } else {
-      setIsCreating(true);
-      const { error, data: createdUser } = await authClient.admin.createUser({
+    setIsCreating(true);
+    try {
+      const { error, data: created } = await authClient.admin.createUser({
         name: data.name,
         email: data.email,
         password: data.password!,
-        // @ts-ignore
-        role: role,
-        data: {
-          ...payload,
-        },
+        role: role as "admin",
+        data: payload,
       });
 
-      if (error) {
-        setIsCreating(false);
-        throw error;
+      if (error || !created) {
+        toast.error(error?.message || `Failed to create ${roleLabel.toLowerCase()}`);
+        return;
       }
-      if (createdUser && role === "patient" && data.status === "admitted") {
+
+      if (role === "patient" && data.status === "admitted") {
         admitMutation.mutate({
-          patientId: createdUser.user.id,
+          patientId: created.user.id,
           admissionReason: data.medicalHistory || "General Admission",
         });
       }
-      socket.emit("notify_user_created");
+
+      emitSocket("notify_user_created");
       toast.success(`${roleLabel} created successfully!`);
       activityMutation.mutate({
-        userId: createdUser.user.id,
         action: "create",
-        details: `${roleLabel} account created for ${createdUser.user.name}`,
+        details: `${roleLabel} account created for ${created.user.name}`,
       });
+      invalidateUsers();
       setOpen(false);
-      form.reset();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create user",
+      );
+    } finally {
       setIsCreating(false);
     }
   };
 
   const isLoading =
-    loading ||
-    isCreating ||
-    admitMutation.isPending ||
-    updateMutation.isPending ||
-    activityMutation.isPending;
+    loading || isCreating || updateMutation.isPending || activityMutation.isPending;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {isEdit ? (
-          <Button variant="outline" disabled={loading}>
+          <Button variant="outline" size="sm" disabled={loading}>
             Edit
           </Button>
         ) : (
@@ -215,7 +214,7 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-xl min-w-xl max-h-[98vh] overflow-y-auto card">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-xl max-h-[92vh] overflow-y-auto card">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit" : "Add New"} {roleLabel}
@@ -223,7 +222,7 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
           <DialogDescription>
             {isEdit
               ? `Update details for ${user?.name}.`
-              : `Enter details to create a new ${roleLabel} account.`}
+              : `Enter details to create a new ${roleLabel.toLowerCase()} account.`}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
@@ -232,6 +231,7 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
             name="name"
             label="Full Name"
             placeholder="John Doe"
+            autoComplete="off"
             startIcon={<UserIcon size={18} />}
           />
 
@@ -241,6 +241,7 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
             label="Email Address"
             type="email"
             placeholder="john@hospital.com"
+            autoComplete="off"
             startIcon={<Mail size={18} />}
           />
 
@@ -250,6 +251,7 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
             label={isEdit ? "New Password (Optional)" : "Password"}
             type="password"
             placeholder={isEdit ? "Leave blank to keep current" : "••••••••"}
+            autoComplete="new-password"
             startIcon={<Lock size={18} />}
           />
 
@@ -273,12 +275,13 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
           )}
           {role === "patient" && (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <CustomInput
                   control={form.control}
                   name="age"
                   label="Age"
                   type="number"
+                  min={0}
                   placeholder="e.g. 34"
                 />
                 <CustomSelect
@@ -303,15 +306,6 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
               />
             </>
           )}
-          <CustomSelect
-            control={form.control}
-            name="status"
-            label="Status"
-            placeholder="Select Status"
-            options={
-              role === "patient" ? PATIENT_STATUS_OPTIONS : STAFF_STATUS_OPTIONS
-            }
-          />
           {["nurse", "lab_tech", "pharmacist"].includes(role) && (
             <CustomInput
               control={form.control}
@@ -321,6 +315,15 @@ const CreateUserModal = ({ role, user, loading }: UserModalProps) => {
               startIcon={<Building2 size={18} />}
             />
           )}
+          <CustomSelect
+            control={form.control}
+            name="status"
+            label="Status"
+            placeholder="Select Status"
+            options={
+              role === "patient" ? PATIENT_STATUS_OPTIONS : STAFF_STATUS_OPTIONS
+            }
+          />
           <DialogFooter className="mt-6 border-none">
             <Button
               type="button"

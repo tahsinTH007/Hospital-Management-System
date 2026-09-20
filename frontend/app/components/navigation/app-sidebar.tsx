@@ -1,4 +1,3 @@
-"use client";
 import { Link, useLocation } from "react-router";
 import { Activity, ChevronRight } from "lucide-react";
 
@@ -8,7 +7,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
@@ -25,35 +23,126 @@ import {
 } from "@/components/ui/collapsible";
 import { authClient } from "@/lib/auth-client";
 import type { Role } from "@/types";
-import { navConfig } from "./nav-config";
+import { IMPLEMENTED_ROUTES, navConfig, type NavItem } from "./nav-config";
+import { humanize } from "@/lib/utils";
 
-interface NavItem {
-  title: string;
-  url: string;
-  icon?: React.ElementType;
-  allowedRoles: Role[];
-  items?: {
-    title: string;
-    url: string;
-    allowedRoles?: Role[];
-  }[];
+function NavGroup({
+  label,
+  items,
+  pathname,
+}: {
+  label: string;
+  items: NavItem[];
+  pathname: string;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarMenu>
+        {items.map((item) => {
+          const subItems = item.items ?? [];
+          const isActive =
+            item.url === pathname || subItems.some((s) => s.url === pathname);
+
+          // Leaf entry without sub items.
+          if (subItems.length === 0) {
+            const soon = !IMPLEMENTED_ROUTES.has(item.url);
+            return (
+              <SidebarMenuItem key={item.title}>
+                <SidebarMenuButton
+                  tooltip={item.title}
+                  isActive={isActive}
+                  size="lg"
+                  asChild
+                  className="group-data-[collapsible=icon]:justify-center!"
+                >
+                  <Link to={item.url}>
+                    {item.icon && <item.icon />}
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {item.title}
+                    </span>
+                    {soon && <SoonBadge />}
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          }
+
+          return (
+            <Collapsible
+              key={item.title}
+              asChild
+              defaultOpen={isActive}
+              className="group/collapsible"
+            >
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton
+                    tooltip={item.title}
+                    isActive={isActive}
+                    size="lg"
+                    className="group-data-[collapsible=icon]:justify-center!"
+                  >
+                    {item.icon && <item.icon />}
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {item.title}
+                    </span>
+                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {subItems.map((subItem) => {
+                      const soon = !IMPLEMENTED_ROUTES.has(subItem.url);
+                      return (
+                        <SidebarMenuSubItem key={subItem.title}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={pathname === subItem.url}
+                            className="my-1"
+                          >
+                            <Link to={subItem.url}>
+                              <span>{subItem.title}</span>
+                              {soon && <SoonBadge />}
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+          );
+        })}
+      </SidebarMenu>
+    </SidebarGroup>
+  );
 }
+
+const SoonBadge = () => (
+  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground group-data-[collapsible=icon]:hidden">
+    Soon
+  </span>
+);
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { pathname } = useLocation();
   const { data: session } = authClient.useSession();
   const userRole = (session?.user?.role as Role) || "patient";
 
-  const filterNav = (items: NavItem[]) => {
-    return items.filter((item) => item.allowedRoles.includes(userRole));
-  };
-  const filteredMain = filterNav(navConfig.navMain);
-  const filteredAdmin = filterNav(navConfig.navAdmin);
-  const filteredSecondary = filterNav(navConfig.navSecondary);
-
-  const isGroupActive = (items: { url: string }[] = []) => {
-    return items.some((item) => item.url === pathname);
-  };
+  // Keep only the groups AND sub items this role is allowed to open.
+  const filterNav = (items: NavItem[]) =>
+    items
+      .filter((item) => item.allowedRoles.includes(userRole))
+      .map((item) => ({
+        ...item,
+        items: item.items?.filter(
+          (sub) => !sub.allowedRoles || sub.allowedRoles.includes(userRole),
+        ),
+      }));
 
   return (
     <Sidebar variant="inset" collapsible="icon" {...props}>
@@ -65,7 +154,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               asChild
               className="group-data-[collapsible=icon]:justify-center! group-data-[collapsible=icon]:p-2!"
             >
-              <Link to="/dashboard">
+              <Link to={userRole === "patient" && session ? `/profile/${session.user.id}` : "/dashboard"}>
                 <div className="bg-primary text-white flex aspect-square size-8 items-center justify-center rounded-lg shadow-blue-500/30">
                   <Activity className="size-4" />
                 </div>
@@ -74,8 +163,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     MedFlow AI
                   </span>
                   <span className="truncate text-xs text-slate-500">
-                    {userRole.charAt(0).toUpperCase() + userRole.slice(1)}{" "}
-                    Portal
+                    {humanize(userRole)} Portal
                   </span>
                 </div>
               </Link>
@@ -84,131 +172,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {/* Group 1 */}
-        {filteredMain.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Platform</SidebarGroupLabel>
-            <SidebarMenu>
-              {filteredMain.map((item) => {
-                const isActive = isGroupActive(item.items);
-
-                return (
-                  <Collapsible
-                    key={item.title}
-                    asChild
-                    defaultOpen={isActive}
-                    className="group/collapsible"
-                  >
-                    <SidebarMenuItem>
-                      <CollapsibleTrigger asChild>
-                        <SidebarMenuButton
-                          tooltip={item.title}
-                          isActive={isActive}
-                          size="lg"
-                          className="group-data-[collapsible=icon]:justify-center!"
-                        >
-                          {item.icon && <item.icon />}
-
-                          <span className="group-data-[collapsible=icon]:hidden">
-                            {item.title}
-                          </span>
-
-                          <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
-                        </SidebarMenuButton>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <SidebarMenuSub>
-                          {item.items?.map((subItem) => {
-                            const isChildActive = pathname === subItem.url;
-                            return (
-                              <SidebarMenuSubItem key={subItem.title}>
-                                <SidebarMenuSubButton
-                                  asChild
-                                  isActive={isChildActive}
-                                  className="my-1"
-                                >
-                                  <Link to={subItem.url}>
-                                    <span>{subItem.title}</span>
-                                  </Link>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            );
-                          })}
-                        </SidebarMenuSub>
-                      </CollapsibleContent>
-                    </SidebarMenuItem>
-                  </Collapsible>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
-        {/* Grpup 2 */}
-        {filteredAdmin.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Administration</SidebarGroupLabel>
-            <SidebarMenu>
-              {filteredAdmin.map((item) => {
-                const isActive = isGroupActive(item.items);
-                return (
-                  <Collapsible
-                    key={item.title}
-                    asChild
-                    defaultOpen={isActive}
-                    className="group/collapsible"
-                  >
-                    <SidebarMenuItem>
-                      <CollapsibleTrigger asChild>
-                        <SidebarMenuButton
-                          tooltip={item.title}
-                          isActive={isActive}
-                          size="lg"
-                          className="group-data-[collapsible=icon]:justify-center!"
-                        >
-                          {item.icon && <item.icon />}
-                          <span className="group-data-[collapsible=icon]:hidden">
-                            {item.title}
-                          </span>
-                          <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
-                        </SidebarMenuButton>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <SidebarMenuSub>
-                          {item.items?.map((subItem) => {
-                            const isChildActive = pathname === subItem.url;
-                            return (
-                              <SidebarMenuSubItem key={subItem.title}>
-                                <SidebarMenuSubButton
-                                  asChild
-                                  isActive={isChildActive}
-                                  className="my-1"
-                                >
-                                  <Link to={subItem.url}>
-                                    <span>{subItem.title}</span>
-                                  </Link>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            );
-                          })}
-                        </SidebarMenuSub>
-                      </CollapsibleContent>
-                    </SidebarMenuItem>
-                  </Collapsible>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
+        <NavGroup label="Platform" items={filterNav(navConfig.navMain)} pathname={pathname} />
+        <NavGroup label="Administration" items={filterNav(navConfig.navAdmin)} pathname={pathname} />
+        <NavGroup label="Help" items={filterNav(navConfig.navSecondary)} pathname={pathname} />
       </SidebarContent>
       {session?.user && (
         <SidebarFooter>
-          <NavUser
-            user={{
-              name: session?.user?.name!,
-              email: session?.user?.email!,
-              avatar: session?.user?.image!,
-            }}
-          />
+          <NavUser user={session.user} />
         </SidebarFooter>
       )}
     </Sidebar>

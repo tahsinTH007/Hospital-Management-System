@@ -1,4 +1,4 @@
-import { auth } from "../lib/auth";
+import { auth } from "../lib/auth.ts";
 import { fromNodeHeaders } from "better-auth/node";
 import type { Request, Response, NextFunction } from "express";
 

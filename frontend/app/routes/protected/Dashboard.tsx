@@ -1,42 +1,44 @@
 import { useQuery } from "@tanstack/react-query";
+import { Navigate } from "react-router";
 import { authClient } from "@/lib/auth-client";
 import { getUsers } from "@/lib/api";
 import Loader from "@/components/global/Loader";
-import { useNavigate } from "react-router";
 import type { Role } from "@/types";
 import QuickActions from "@/components/dashboard/QuickActions";
 import StatsCards from "@/components/global/StatsCards";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import ActiveAssignmentsBoard from "@/components/dashboard/ActiveAssignmentsBoard";
+import { getHomePath } from "@/lib/routing";
 
 export function meta() {
-  return [{ title: "Dashboard" }];
+  return [{ title: "Dashboard | MedFlow AI" }];
 }
 
 export default function HMSDashboard() {
   const { data: session, isPending: isAuthLoading } = authClient.useSession();
-  const navigate = useNavigate();
   const user = session?.user;
-
-  if (user?.role === "patient") {
-    navigate(`/profile/${session?.user.id}`);
-  }
+  const isAdmin = user?.role === "admin";
+  const canListPatients = ["admin", "doctor", "nurse"].includes(user?.role ?? "");
 
   const { data: userData, isLoading: isDataLoading } = useQuery({
-    queryKey: ["patients"],
+    queryKey: ["users", "patient", "dashboard"],
     queryFn: () => getUsers({ role: "patient", limit: 100 }),
+    enabled: canListPatients,
   });
 
-  if (isAuthLoading || isDataLoading)
+  if (isAuthLoading || (canListPatients && isDataLoading)) {
     return (
-      <div className="w-full h-screen flex items-center justify-center">
+      <div className="w-full min-h-[60vh] flex items-center justify-center">
         <Loader label="Preparing Dashboard..." />
       </div>
     );
+  }
 
-  const isAdmin = user?.role === "admin";
-  const isMedicalStaff = ["doctor", "nurse"].includes(user?.role || "");
+  // Patients have no dashboard – their profile is their home page.
+  if (user?.role === "patient") {
+    return <Navigate to={getHomePath(user)} replace />;
+  }
 
   return (
     <div className="space-y-8">
@@ -52,26 +54,21 @@ export default function HMSDashboard() {
         <QuickActions role={user?.role as Role} />
       </div>
 
-      <StatsCards data={userData?.res || []} />
+      <StatsCards data={userData?.res || []} role="patient" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 space-y-8">
-          {isAdmin && (
-            <section className="card p-6 rounded-xl shadow-sm">
-              <h3 className="text-lg font-bold mb-6">Revenue Overview</h3>
-              <RevenueChart />
-            </section>
-          )}
+      {isAdmin && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <section className="lg:col-span-8 card p-6 rounded-xl shadow-sm">
+            <h3 className="text-lg font-bold mb-6">Revenue Overview</h3>
+            <RevenueChart />
+          </section>
+          <section className="lg:col-span-4 card p-6 rounded-xl shadow-sm">
+            <h3 className="text-lg font-bold mb-4">Recent Activity</h3>
+            <RecentActivity />
+          </section>
         </div>
-        {isAdmin && (
-          <div className="lg:col-span-4 space-y-8">
-            <section className="card p-6 rounded-xl shadow-sm">
-              <h3 className="text-lg font-bold mb-4">Recent Activity</h3>
-              <RecentActivity />
-            </section>
-          </div>
-        )}
-      </div>
+      )}
+
       <section className="card p-6 rounded-xl shadow-sm">
         <ActiveAssignmentsBoard />
       </section>

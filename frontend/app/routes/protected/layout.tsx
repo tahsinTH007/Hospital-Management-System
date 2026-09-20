@@ -8,33 +8,40 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { getRouteConfig, navConfig } from "@/components/navigation/nav-config";
 import Header from "@/components/navigation/Header";
+import { getHomePath } from "@/lib/routing";
+
+const ALL_NAV_ITEMS = [
+  ...navConfig.navMain,
+  ...navConfig.navAdmin,
+  ...navConfig.navSecondary,
+];
 
 const Layout = () => {
   const { data: session, isPending } = authClient.useSession();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const userRole = (session?.user?.role as Role) || "patient";
+  const user = session?.user;
+  const userRole = (user?.role as Role) || "patient";
 
   useEffect(() => {
-    if (isPending) return;
+    if (isPending || !user) return;
 
-    const allNavItems = [...navConfig.navMain];
-    const currentRouteConfig = getRouteConfig(pathname, allNavItems);
+    const currentRouteConfig = getRouteConfig(pathname, ALL_NAV_ITEMS);
+    if (!currentRouteConfig) return;
 
-    if (currentRouteConfig) {
-      const hasAccess = currentRouteConfig.allowedRoles.includes(userRole);
-
-      if (!hasAccess) {
-        toast.error("Unauthorized Access");
-        navigate("/dashboard", { replace: true });
+    if (!currentRouteConfig.allowedRoles.includes(userRole)) {
+      // Patients simply land on their profile instead of the staff dashboard.
+      if (!(userRole === "patient" && pathname === "/dashboard")) {
+        toast.error("You don't have access to that page");
       }
+      navigate(getHomePath(user), { replace: true });
     }
-  }, [pathname, userRole, isPending, navigate]);
+  }, [pathname, userRole, isPending, navigate, user]);
 
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader label="Initializing Medflolw..." />
+        <Loader label="Initializing MedFlow..." />
       </div>
     );
   }
@@ -45,9 +52,9 @@ const Layout = () => {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="bg-card/50">
+      <SidebarInset className="bg-card/50 min-w-0">
         <Header />
-        <main className="px-4 my-4">
+        <main className="px-4 my-4 min-w-0">
           <Outlet />
         </main>
       </SidebarInset>

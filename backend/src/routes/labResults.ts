@@ -1,11 +1,11 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth";
-import { checkRole } from "../middleware/checkRole";
+import { requireAuth } from "../middleware/auth.ts";
+import { checkRole } from "../middleware/checkRole.ts";
 import {
   createLabResult,
   getPatientLabResults,
   updateLabResult,
-} from "../controllers/labResults";
+} from "../controllers/labResults.ts";
 
 const labResultsRouter = Router();
 
@@ -16,12 +16,9 @@ labResultsRouter.post(
   createLabResult,
 );
 
-labResultsRouter.get(
-  "/patient/:patientId",
-  requireAuth,
-  checkRole(["admin", "doctor", "nurse", "lab_tech"]),
-  getPatientLabResults,
-);
+// Staff can read any patient; a patient can only read their own results
+// (enforced inside the controller).
+labResultsRouter.get("/patient/:patientId", requireAuth, getPatientLabResults);
 
 labResultsRouter.put(
   "/:id",

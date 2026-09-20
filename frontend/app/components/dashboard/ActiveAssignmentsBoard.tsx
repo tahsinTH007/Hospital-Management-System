@@ -11,7 +11,7 @@ import {
   Sparkles,
   Activity,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 export default function ActiveAssignmentsBoard() {
@@ -19,8 +19,8 @@ export default function ActiveAssignmentsBoard() {
   const currentUser = session?.user;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["users", "patient", "admissions"],
-    queryFn: () => getUsers({ role: "patient", limit: 50 }),
+    queryKey: ["users", "patient", "dashboard"],
+    queryFn: () => getUsers({ role: "patient", limit: 100 }),
   });
 
   const activeAssignments = (data?.res || []).filter(
@@ -37,7 +37,7 @@ export default function ActiveAssignmentsBoard() {
   }
 
   if (isError) {
-    return <div className="text-red-500">Failed to load assignments.</div>;
+    return <div className="text-destructive">Failed to load assignments.</div>;
   }
 
   if (activeAssignments.length === 0) {
@@ -97,16 +97,13 @@ export default function ActiveAssignmentsBoard() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10 border border-slate-100 shadow-sm">
-                      <AvatarImage src={patient.image || ""} />
+                      <AvatarImage src={patient.image ?? undefined} />
                       <AvatarFallback
                         className={
                           isHighlighted ? "bg-indigo-100 text-indigo-700" : ""
                         }
                       >
-                        {patient.name
-                          .split(" ")
-                          .map((n: string) => n[0])
-                          .join("")}
+                        {getInitials(patient.name)}
                       </AvatarFallback>
                     </Avatar>
                     <div>
@@ -114,8 +111,13 @@ export default function ActiveAssignmentsBoard() {
                         {patient.name}
                       </h3>
                       <p className="text-xs text-slate-500">
-                        {patient.age}y • {patient.gender} •{" "}
-                        {patient.bloodgroup || "Unknown blood"}
+                        {[
+                          patient.age ? `${patient.age}y` : null,
+                          patient.gender,
+                          patient.bloodgroup || "Unknown blood group",
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
                       </p>
                     </div>
                   </div>
@@ -180,9 +182,11 @@ export default function ActiveAssignmentsBoard() {
                   </span>
                   <p
                     className="text-slate-700 dark:text-slate-300 line-clamp-2"
-                    title={patient.medicalHistory}
+                    title={patient.admissionReason || patient.medicalHistory}
                   >
-                    {patient.medicalHistory || "No medical history provided."}
+                    {patient.admissionReason ||
+                      patient.medicalHistory ||
+                      "No admission reason provided."}
                   </p>
                 </div>
 

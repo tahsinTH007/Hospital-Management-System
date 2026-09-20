@@ -41,3 +41,8 @@ coverage/
 
 # Bun (optional)
 bun.lockb
+# Vercel
+.vercel/
+
+# local AI/IDE tooling
+.claude/

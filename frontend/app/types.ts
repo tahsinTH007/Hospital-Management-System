@@ -21,14 +21,16 @@ export type UserStatus = PatientStatus | StaffStatus;
 
 export interface LabResult {
   _id: string;
-  patientId: string;
+  patient: string;
+  uploadedBy?: string;
   testType: string;
   bodyPart: string;
   imageUrl: string;
   aiAnalysis: string;
   status: "pending" | "analyzed" | "reviewed";
-  doctorNotes: string;
+  doctorNotes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface User {
@@ -37,20 +39,20 @@ export interface User {
   email: string;
   image?: string | null;
   role: Role;
-  emailVerified: boolean;
+  emailVerified?: boolean;
   createdAt: string;
   updatedAt: string;
   status: UserStatus;
-  banned: boolean;
+  banned?: boolean;
   specialization?: string;
   gender?: string;
   bloodgroup?: string;
   medicalHistory?: string;
   age?: string;
   department?: string;
-  labResults?: LabResult[];
   prescriptions?: string[];
-  appointmentsXRay?: string[];
+  appointments?: string[];
+  admissionReason?: string;
   assignedDoctorId?: string | null;
   assignedNurseId?: string | null;
   triageReasoning?: string;
@@ -78,48 +80,59 @@ export interface Notification {
   createdAt: string;
 }
 
-export interface WebPushSubscription {
-  userId: string;
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
+export interface NotificationsResponse {
+  notifications: Notification[];
+  unreadCount: number;
 }
 
 export interface ActivityLog {
   _id: string;
-  user: User;
+  user: User | null;
   action: string;
   details?: string;
-  createdAt: Date;
+  createdAt: string;
 }
 
-export interface invoice {
+export interface InvoiceItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+export interface Invoice {
   _id: string;
-  user: User;
+  patientId: string;
+  /** Populated by the admin ledger endpoint only. */
+  user?: User | null;
   polarCheckoutId?: string;
   status: "draft" | "pending_payment" | "paid";
-  items: Array<{
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  }>;
+  items: InvoiceItem[];
   totalAmount: number;
-  createdAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface appointment {
+export interface BillingStats {
+  year: number;
+  totalBilled: number;
+  totalInvoices: number;
+  paid: { count: number; amount: number };
+  pending: { count: number; amount: number };
+  draft: { count: number; amount: number };
+  monthlyRevenue: Array<{ month: number; amount: number }>;
+}
+
+export interface Appointment {
   _id: string;
   patientId: string;
   doctorId: string;
   nurseId?: string;
-  date: Date;
+  date: string;
   time: string;
   reason: string;
   status: "scheduled" | "confirmed" | "completed" | "cancelled" | "in-progress";
   isVirtual: boolean;
   meetingId: string;
-  createdAt: Date;
+  createdAt: string;
 }

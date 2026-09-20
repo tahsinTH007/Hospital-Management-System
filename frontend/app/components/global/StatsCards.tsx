@@ -1,7 +1,7 @@
 import { Users, Activity, UserPlus, UserCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { User } from "@/types";
+import type { Role, User } from "@/types";
 
 const formatTrend = (current: number, previous: number) => {
   if (previous === 0) {
@@ -15,7 +15,7 @@ const formatTrend = (current: number, previous: number) => {
   };
 };
 
-const StatsCards = ({ data }: { data: User[] }) => {
+const StatsCards = ({ data, role }: { data: User[]; role?: Role }) => {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
@@ -50,7 +50,7 @@ const StatsCards = ({ data }: { data: User[] }) => {
 
   const newTrend = formatTrend(newCurrent, newPrevious);
 
-  const isPatient = data[0]?.role === "patient";
+  const isPatient = (role ?? data[0]?.role) === "patient";
   const dischargedCurrent = data.filter(
     (u) => u.status?.toLowerCase() === "discharged",
   ).length;

@@ -2,47 +2,59 @@ import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { admin } from "better-auth/plugins";
 import { MongoClient } from "mongodb";
+import { checkout, polar, portal, usage, webhooks } from "@polar-sh/better-auth";
+import invoice from "../models/invoice.ts";
+import { polarClient } from "./polar.ts";
 import {
-  polar,
-  checkout,
-  portal,
-  usage,
-  webhooks,
-} from "@polar-sh/better-auth";
-import { Polar } from "@polar-sh/sdk";
-import invoice from "../models/invoice";
+  ALLOWED_ORIGINS,
+  BETTER_AUTH_URL,
+  CROSS_SITE_COOKIES,
+  FRONTEND_URL,
+} from "../config/env.ts";
 
-const client = new MongoClient(process.env.MONGO_URI || "");
+const mongoUri = process.env.MONGO_URI?.trim();
+if (!mongoUri) {
+  throw new Error("MONGO_URI is not set");
+}
+
+// The MongoDB driver connects lazily on first use, so this is serverless-safe.
+const client = new MongoClient(mongoUri);
 const db = client.db();
-
-export const polarClient = new Polar({
-  accessToken: process.env.POLAR_ACCESS_TOKEN,
-  server: "sandbox",
-});
 
 export const auth = betterAuth({
   database: mongodbAdapter(db),
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
-  trustedOrigins: [process.env.FRONTEND_URL || "http://localhost:5173"],
+  baseURL: BETTER_AUTH_URL,
+  trustedOrigins: ALLOWED_ORIGINS,
   emailAndPassword: { enabled: true },
+  advanced: CROSS_SITE_COOKIES
+    ? {
+        defaultCookieAttributes: {
+          sameSite: "none",
+          secure: true,
+          partitioned: true,
+        },
+      }
+    : undefined,
   plugins: [
     admin({
       defaultRole: "patient",
-      adminRole: ["admin", "superadmin"],
+      adminRoles: ["admin"],
     }),
     polar({
       client: polarClient,
-      createCustomerOnSignUp: true,
+      // Never block account creation on Polar – customers are created lazily
+      // (see ensurePolarCustomer) only when a patient actually gets billed.
+      createCustomerOnSignUp: false,
       use: [
         checkout({
           authenticatedUsersOnly: true,
         }),
         portal({
-          returnUrl: `${process.env.FRONTEND_URL}/dashboard`,
+          returnUrl: `${FRONTEND_URL}/dashboard`,
         }),
         usage(),
         webhooks({
-          secret: process.env.POLAR_WEBHOOK_SECRET!,
+          secret: process.env.POLAR_WEBHOOK_SECRET ?? "",
           onPayload: async ({ data, type }) => {
             if (type === "order.paid" && data.paid) {
               const invoiceId = data.metadata?.hospitalInvoiceId;

@@ -1,7 +1,7 @@
-import { deleteFile } from "../controllers/uploadthing";
-import { requireAuth } from "../middleware/auth";
-
 import express from "express";
+
+import { deleteFile } from "../controllers/uploadthing.ts";
+import { requireAuth } from "../middleware/auth.ts";
 
 const uploadthingRouter = express.Router();
 

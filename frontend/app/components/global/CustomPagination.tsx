@@ -12,13 +12,15 @@ const CustomPagination = ({
   totalPages: number;
   loading: boolean;
 }) => {
+  if (totalPages <= 1) return null;
+
   return (
     <div className="flex items-center justify-end space-x-2 py-4 px-6 border-t">
       <Button
         variant="outline"
         size="sm"
         onClick={() => setPage(Math.max(1, currentPage - 1))}
-        disabled={currentPage === 1 || loading}
+        disabled={currentPage <= 1 || loading}
       >
         <ChevronLeft className="h-4 w-4 mr-2" />
         Previous
@@ -30,7 +32,7 @@ const CustomPagination = ({
         variant="outline"
         size="sm"
         onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-        disabled={currentPage === totalPages || loading}
+        disabled={currentPage >= totalPages || loading}
       >
         Next
         <ChevronRight className="h-4 w-4 ml-2" />

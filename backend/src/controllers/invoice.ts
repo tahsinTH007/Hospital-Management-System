@@ -1,45 +1,72 @@
 import type { Request, Response } from "express";
-import invoice from "../models/invoice";
-import { fromNodeHeaders } from "better-auth/node";
 import mongoose from "mongoose";
-import { auth, polarClient } from "../lib/auth";
+import invoice from "../models/invoice.ts";
+import { ensurePolarCustomer, polarClient } from "../lib/polar.ts";
+import { FRONTEND_URL } from "../config/env.ts";
+
+const isStaff = (user: any) =>
+  ["admin", "doctor", "nurse", "lab_tech", "pharmacist"].includes(user?.role);
+
+const canAccessPatientBilling = (currentUser: any, patientId: string) =>
+  isStaff(currentUser) || currentUser?.id === patientId;
+
+const findActiveInvoice = (patientId: string) =>
+  invoice.findOne({
+    patientId,
+    status: { $in: ["draft", "pending_payment"] },
+  });
 
 export const getMyActiveInvoice = async (req: Request, res: Response) => {
   try {
-    const currentUserId = (req as any).user.id;
-
-    const activeInvoice = await invoice.findOne({
-      patientId: currentUserId,
-      status: { $in: ["draft", "pending_payment"] },
-    });
+    const activeInvoice = await findActiveInvoice((req as any).user.id);
     if (!activeInvoice) {
       return res.status(404).json({ message: "No active invoice found" });
     }
     res.status(200).json(activeInvoice);
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/** Active (unpaid) invoice of a given patient – for the patient or staff. */
+export const getActiveInvoiceForPatient = async (req: Request, res: Response) => {
+  try {
+    const patientId = req.params.patientId as string;
+    if (!canAccessPatientBilling((req as any).user, patientId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    const activeInvoice = await findActiveInvoice(patientId);
+    if (!activeInvoice) {
+      return res.status(404).json({ message: "No active invoice found" });
+    }
+    res.status(200).json(activeInvoice);
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const getBillingHistory = async (req: Request, res: Response) => {
   try {
-    const currentUserId = (req as any).user.id;
-    const activeInvoice = await invoice.find({
-      patientId: currentUserId,
-      status: { $in: ["paid"] },
-    });
-    res.status(200).json(activeInvoice);
+    const patientId = (req.params.id as string) || (req as any).user.id;
+    if (!canAccessPatientBilling((req as any).user, patientId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    const history = await invoice
+      .find({ patientId, status: "paid" })
+      .sort({ updatedAt: -1 });
+    res.status(200).json(history);
   } catch (error) {
-    console.log(error);
+    console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const allBilling = async (req: Request, res: Response) => {
   try {
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 10;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 10));
     const skip = (page - 1) * limit;
 
     const billings = await invoice
@@ -50,10 +77,14 @@ export const allBilling = async (req: Request, res: Response) => {
       .lean();
 
     const count = await invoice.countDocuments();
-    const collection = mongoose.connection.collection("user");
-    const users = await collection
+
+    const patientIds = [...new Set(billings.map((b) => b.patientId))]
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    const users = await mongoose.connection
+      .collection("user")
       .find(
-        { role: "patient" },
+        { _id: { $in: patientIds } },
         { projection: { password: 0, headers: 0, emailVerified: 0 } },
       )
       .toArray();
@@ -63,13 +94,10 @@ export const allBilling = async (req: Request, res: Response) => {
       userMap.set(user._id.toString(), user);
     });
 
-    const billingsWithUser = billings.map((billing) => {
-      const user = userMap.get(billing.patientId.toString());
-      return {
-        ...billing,
-        user: user || null,
-      };
-    });
+    const billingsWithUser = billings.map((billing) => ({
+      ...billing,
+      user: userMap.get(billing.patientId.toString()) || null,
+    }));
 
     res.json({
       res: billingsWithUser,
@@ -86,29 +114,98 @@ export const allBilling = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Aggregated numbers for the finance dashboard: totals across ALL invoices
+ * (not just one page) and paid revenue per month for the requested year.
+ */
+export const billingStats = async (req: Request, res: Response) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+
+    const [totals, monthly] = await Promise.all([
+      invoice.aggregate<{ _id: string; count: number; amount: number }>([
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+            amount: { $sum: "$totalAmount" },
+          },
+        },
+      ]),
+      invoice.aggregate<{ _id: number; amount: number }>([
+        { $match: { status: "paid", updatedAt: { $gte: start, $lt: end } } },
+        {
+          $group: {
+            _id: { $month: "$updatedAt" },
+            amount: { $sum: "$totalAmount" },
+          },
+        },
+      ]),
+    ]);
+
+    const byStatus = Object.fromEntries(
+      totals.map((t) => [t._id, { count: t.count, amount: t.amount }]),
+    ) as Record<string, { count: number; amount: number }>;
+
+    const monthlyRevenue = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      amount: monthly.find((m) => m._id === i + 1)?.amount ?? 0,
+    }));
+
+    res.json({
+      year,
+      totalBilled: totals.reduce((sum, t) => sum + t.amount, 0),
+      totalInvoices: totals.reduce((sum, t) => sum + t.count, 0),
+      paid: byStatus.paid ?? { count: 0, amount: 0 },
+      pending: byStatus.pending_payment ?? { count: 0, amount: 0 },
+      draft: byStatus.draft ?? { count: 0, amount: 0 },
+      monthlyRevenue,
+    });
+  } catch (error) {
+    console.error("Error computing billing stats:", error);
+    res.status(500).json({ message: "Failed to compute billing stats" });
+  }
+};
+
 export const createCheckoutSession = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
+    const currentUser = (req as any).user;
     const userInvoice = await invoice.findById(id);
     if (!userInvoice || userInvoice.status === "paid") {
       return res
         .status(400)
         .json({ message: "Invalid or already paid invoice" });
     }
-
-    const session = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
-
-    if (!session) {
-      return res.status(401).json({ message: "Unauthorized" });
+    if (!canAccessPatientBilling(currentUser, userInvoice.patientId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    if (!process.env.POLAR_PRODUCT_ID) {
+      return res.status(500).json({ message: "Billing is not configured" });
     }
 
+    // The Polar customer is always the patient, even when an admin starts
+    // the checkout on their behalf.
+    const patient = await mongoose.connection.collection("user").findOne(
+      { _id: new mongoose.Types.ObjectId(userInvoice.patientId) },
+      { projection: { email: 1, name: 1 } },
+    );
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+    await ensurePolarCustomer({
+      id: userInvoice.patientId,
+      email: patient.email,
+      name: patient.name,
+    });
+
     const checkout = await polarClient.checkouts.create({
-      externalCustomerId: session.user.id,
-      products: [process.env.POLAR_PRODUCT_ID!],
+      externalCustomerId: userInvoice.patientId,
+      products: [process.env.POLAR_PRODUCT_ID],
       prices: {
-        [process.env.POLAR_PRODUCT_ID!]: [
+        [process.env.POLAR_PRODUCT_ID]: [
           {
             amountType: "fixed",
             priceAmount: userInvoice.totalAmount,
@@ -120,8 +217,8 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
         hospitalInvoiceId: userInvoice._id.toString(),
         patientId: userInvoice.patientId,
       },
-      successUrl: `${process.env.FRONTEND_URL}/profile/${userInvoice.patientId}?checkout_id={CHECKOUT_ID}`,
-      returnUrl: `${process.env.FRONTEND_URL}/profile/${userInvoice.patientId}`,
+      successUrl: `${FRONTEND_URL}/profile/${userInvoice.patientId}?checkout_id={CHECKOUT_ID}`,
+      returnUrl: `${FRONTEND_URL}/profile/${userInvoice.patientId}`,
     });
 
     userInvoice.status = "pending_payment";
@@ -131,6 +228,6 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     res.json({ checkoutUrl: checkout.url });
   } catch (error) {
     console.error("Polar Checkout Error:", error);
-    res.status(500).json({ error: "Failed to generate payment link" });
+    res.status(500).json({ message: "Failed to generate payment link" });
   }
 };

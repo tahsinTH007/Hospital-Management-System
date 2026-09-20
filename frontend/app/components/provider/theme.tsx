@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "dark" | "light" | "system";
+export type Theme = "dark" | "light" | "system";
+
+export const THEME_STORAGE_KEY = "medflow-theme";
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -13,67 +15,70 @@ type ThemeProviderState = {
   setTheme: (theme: Theme) => void;
 };
 
-const initialState: ThemeProviderState = {
+const ThemeProviderContext = createContext<ThemeProviderState>({
   theme: "system",
   setTheme: () => null,
-};
+});
 
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+const applyTheme = (theme: Theme) => {
+  const root = window.document.documentElement;
+  root.classList.remove("light", "dark");
+  const resolved =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : theme;
+  root.classList.add(resolved);
+};
 
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  storageKey = "medflow-theme",
-  ...props
+  storageKey = THEME_STORAGE_KEY,
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem(storageKey) as Theme) || defaultTheme;
-    }
-
-    return defaultTheme;
-  });
+  // Start with the default on both server and client so hydration matches;
+  // the inline script in root.tsx already painted the right theme, and the
+  // stored preference is picked up right after mount.
+  const [theme, setThemeState] = useState<Theme>(defaultTheme);
 
   useEffect(() => {
-    const root = window.document.documentElement;
-
-    root.classList.remove("light", "dark");
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
-
-      root.classList.add(systemTheme);
-      return;
+    try {
+      const stored = localStorage.getItem(storageKey) as Theme | null;
+      if (stored && stored !== theme) {
+        setThemeState(stored);
+        return;
+      }
+    } catch {
+      // storage unavailable
     }
+    applyTheme(theme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    root.classList.add(theme);
+  useEffect(() => {
+    applyTheme(theme);
+    if (theme !== "system") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyTheme("system");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
   }, [theme]);
 
-  const value = {
-    theme,
-    setTheme: (theme: Theme) => {
-      if (typeof window !== "undefined") {
-        localStorage.setItem(storageKey, theme);
-      }
-      setTheme(theme);
-    },
+  const setTheme = (next: Theme) => {
+    try {
+      localStorage.setItem(storageKey, next);
+    } catch {
+      // storage unavailable
+    }
+    setThemeState(next);
   };
 
   return (
-    <ThemeProviderContext.Provider {...props} value={value}>
+    <ThemeProviderContext.Provider value={{ theme, setTheme }}>
       {children}
     </ThemeProviderContext.Provider>
   );
 }
 
-export const useTheme = () => {
-  const context = useContext(ThemeProviderContext);
-
-  if (context === undefined)
-    throw new Error("useTheme must be used within a ThemeProvider");
-
-  return context;
-};
+export const useTheme = () => useContext(ThemeProviderContext);

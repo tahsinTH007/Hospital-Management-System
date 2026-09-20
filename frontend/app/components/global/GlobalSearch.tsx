@@ -14,6 +14,8 @@ const GlobalSearch = ({
     <div className="relative w-full md:w-64">
       <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
       <Input
+        type="search"
+        aria-label={`Search ${title}`}
         placeholder={`Search ${title}...`}
         className="pl-8"
         value={search}

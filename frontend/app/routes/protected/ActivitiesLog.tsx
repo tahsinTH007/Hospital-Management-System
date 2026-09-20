@@ -22,9 +22,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import GlobalSearch from "@/components/global/GlobalSearch";
+import { getInitials } from "@/lib/utils";
 
 export function meta() {
-  return [{ title: "System Activities" }];
+  return [{ title: "System Activities | MedFlow AI" }];
 }
 const ActivitiesLog = () => {
   const [page, setPage] = useState(1);
@@ -39,7 +40,7 @@ const ActivitiesLog = () => {
 
   if (isLoading)
     return (
-      <div className="flex justify-center items-center min-h-screen">
+      <div className="flex justify-center items-center min-h-[60vh]">
         <Loader label="Fetching logs..." />
       </div>
     );
@@ -55,13 +56,15 @@ const ActivitiesLog = () => {
   const logs = data?.res || [];
   const pagination = data?.pagination;
 
-  const filteredLogs = logs?.filter((log) =>
-    log?.action.toLowerCase().includes(search.toLowerCase()),
+  const filteredLogs = logs.filter((log) =>
+    `${log.action} ${log.details ?? ""} ${log.user?.name ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
   );
 
   return (
     <Card className="card shadow-sm border-none">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <CardTitle className="font-bold text-xl">System Activities</CardTitle>
           <CardDescription>
@@ -71,11 +74,11 @@ const ActivitiesLog = () => {
         <GlobalSearch
           search={search}
           setSearch={setSearch}
-          title="Search by action..."
+          title="this page"
         />
       </CardHeader>
       <CardContent>
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="">
@@ -102,14 +105,14 @@ const ActivitiesLog = () => {
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={log.user?.image || ""} />
+                          <AvatarImage src={log.user?.image ?? undefined} />
                           <AvatarFallback>
-                            {log.user?.name?.charAt(0) || "U"}
+                            {getInitials(log.user?.name)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
                           <span className="text-sm font-semibold">
-                            {log.user?.name}
+                            {log.user?.name ?? "Deleted user"}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
                             {log.user?.email}
@@ -119,10 +122,10 @@ const ActivitiesLog = () => {
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant="default"
+                        variant="secondary"
                         className="capitalize text-[10px]"
                       >
-                        {log.user?.role}
+                        {log.user?.role?.replace("_", " ") ?? "—"}
                       </Badge>
                     </TableCell>
                     <TableCell>

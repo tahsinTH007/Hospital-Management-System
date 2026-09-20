@@ -1,16 +1,16 @@
 import express from "express";
 
-const userRouter = express.Router();
-
 import {
   fetchAllUsers,
   getUserById,
   updateUser,
   admitPatient,
   getPolarPortalLink,
-} from "../controllers/user";
-import { requireAuth } from "../middleware/auth";
-import { checkRole } from "../middleware/checkRole";
+} from "../controllers/user.ts";
+import { requireAuth } from "../middleware/auth.ts";
+import { checkRole } from "../middleware/checkRole.ts";
+
+const userRouter = express.Router();
 
 userRouter.get(
   "/",

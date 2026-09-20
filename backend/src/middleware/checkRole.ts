@@ -1,4 +1,4 @@
-import { auth } from "../lib/auth";
+import { auth } from "../lib/auth.ts";
 import { fromNodeHeaders } from "better-auth/node";
 import type { Request, Response, NextFunction } from "express";
 
@@ -11,12 +11,18 @@ export type Role =
   | "lab_tech"
   | "patient";
 
+export const STAFF_ROLES: Role[] = ["admin", "doctor", "nurse", "lab_tech", "pharmacist"];
+
 export const checkRole = (allowedRoles: Role[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const session = await auth.api.getSession({
-        headers: fromNodeHeaders(req.headers),
-      });
+      // requireAuth usually runs first – reuse its session instead of
+      // hitting the database a second time.
+      const session =
+        (req as any).session ??
+        (await auth.api.getSession({
+          headers: fromNodeHeaders(req.headers),
+        }));
 
       if (!session) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -30,6 +36,7 @@ export const checkRole = (allowedRoles: Role[]) => {
           .json({ message: "Forbidden: Insufficient Permissions" });
       }
 
+      (req as any).session = session;
       (req as any).user = session.user;
       next();
     } catch (error) {

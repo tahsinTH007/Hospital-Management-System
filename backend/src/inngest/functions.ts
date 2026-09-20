@@ -1,12 +1,22 @@
 import mongoose from "mongoose";
-import { inngest } from "./client";
+import { inngest } from "./client.ts";
 import { NonRetriableError } from "inngest";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { notifyUsers } from "./notifyUsers";
-import labResults from "../models/labResults";
-import invoice from "../models/invoice";
+import { notifyUsers } from "./notifyUsers.ts";
+import labResults from "../models/labResults.ts";
+import invoice from "../models/invoice.ts";
+import { connectDB } from "../config/db.ts";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY!);
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+
+let genAI: GoogleGenerativeAI | null = null;
+const getGenAI = () => {
+  if (!process.env.GEMINI_KEY) {
+    throw new NonRetriableError("GEMINI_KEY is not configured");
+  }
+  genAI ??= new GoogleGenerativeAI(process.env.GEMINI_KEY);
+  return genAI;
+};
 
 export const admitPatient = inngest.createFunction(
   {
@@ -17,6 +27,7 @@ export const admitPatient = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { patientId, admissionReason } = event.data;
+    await connectDB();
     const collection = mongoose.connection.collection("user");
 
     const data = await step.run("fetch-hospital-data", async () => {
@@ -43,8 +54,8 @@ export const admitPatient = inngest.createFunction(
     }
 
     const aiAssignment = await step.run("ai-triage", async () => {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-3-flash-preview",
+      const model = getGenAI().getGenerativeModel({
+        model: GEMINI_MODEL,
         generationConfig: { responseMimeType: "application/json" },
       });
 
@@ -69,7 +80,7 @@ export const admitPatient = inngest.createFunction(
         PATIENT: ${patientDataStr}
         AVAILABLE DOCTORS: ${doctorDataStr}
         AVAILABLE NURSES: ${nurseDataStr}
-        
+
         Respond ONLY with a valid JSON object:
         {
           "doctorId": "id",
@@ -87,7 +98,21 @@ export const admitPatient = inngest.createFunction(
         .replace(/```json/g, "")
         .replace(/```/g, "")
         .trim();
-      return JSON.parse(cleanJson);
+      const parsed = JSON.parse(cleanJson);
+
+      // Never trust ids the model invented – they must be real staff members.
+      const doctor = data.doctors.find((d) => d._id.toString() === parsed.doctorId);
+      const nurse = data.nurses.find((n) => n._id.toString() === parsed.nurseId);
+      if (!doctor || !nurse) {
+        throw new Error("AI triage returned unknown staff ids");
+      }
+      return {
+        doctorId: doctor._id.toString(),
+        doctorName: doctor.name as string,
+        nurseId: nurse._id.toString(),
+        nurseName: nurse.name as string,
+        reasoning: String(parsed.reasoning ?? ""),
+      };
     });
 
     const updatedPatient = await step.run("update-database", async () => {
@@ -111,11 +136,10 @@ export const admitPatient = inngest.createFunction(
 
     await step.run("send-notification", async () => {
       await notifyUsers(
-        aiAssignment.doctorId,
-        aiAssignment.nurseId,
+        [aiAssignment.doctorId, aiAssignment.nurseId],
         "Patient Assigned",
         `You have been assigned to a new patient: ${updatedPatient?.name}`,
-        `/patient/${patientId}`,
+        `/profile/${patientId}`,
         "assignment",
       );
     });
@@ -132,30 +156,29 @@ export const analyzeXRayJob = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { labResultId, imageUrl, bodyPart } = event.data;
+    await connectDB();
 
-    const imageBase64 = await step.run("fetch-image", async () => {
-      const response = await fetch(imageUrl);
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer).toString("base64");
-    });
-
+    // Fetch + analyse in one step so the (large) base64 image never has to be
+    // stored as step output.
     const aiAnalysis = await step.run("call-gemini", async () => {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-3-flash-preview",
-      });
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Could not download image (${response.status})`);
+      }
+      const mimeType =
+        response.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+      const imageBase64 = Buffer.from(await response.arrayBuffer()).toString(
+        "base64",
+      );
+
+      const model = getGenAI().getGenerativeModel({ model: GEMINI_MODEL });
 
       const prompt = `You are an expert AI radiologist. Analyze this ${bodyPart} x-ray image. Provide a structured response: \n1. Key Findings\n2. Potential Abnormalities\n3. Summary.\nKeep it clinical, concise, and end with a disclaimer.`;
 
-      const imageParts = [
-        {
-          inlineData: {
-            data: imageBase64,
-            mimeType: "image/jpeg",
-          },
-        },
-      ];
-
-      const result = await model.generateContent([prompt, ...imageParts]);
+      const result = await model.generateContent([
+        prompt,
+        { inlineData: { data: imageBase64, mimeType } },
+      ]);
       return result.response.text();
     });
 
@@ -179,21 +202,20 @@ export const analyzeXRayJob = inngest.createFunction(
           { projection: { password: 0, emailVerified: 0 } },
         );
 
-      const resultWithPatient = {
-        ...updatedLabResult,
-        patient: patient || null,
-      };
-
-      return resultWithPatient;
+      return { ...updatedLabResult, patient: patient || null };
     });
 
     await step.run("send-notification", async () => {
+      const patient = updatedLab.patient;
       await notifyUsers(
-        updatedLab?.patient?.assignedDoctorId.toString() || "",
-        updatedLab?.patient?.assignedNurseId.toString() || "",
+        [
+          patient?.assignedDoctorId?.toString(),
+          patient?.assignedNurseId?.toString(),
+          patient?._id?.toString(),
+        ],
         "Lab Result Analyzed",
-        `Your lab result for ${updatedLab?.testType} has been analyzed.`,
-        `/patients`,
+        `The ${updatedLab.testType} (${bodyPart}) for ${patient?.name ?? "a patient"} has been analyzed.`,
+        patient ? `/profile/${patient._id.toString()}` : "/patients",
         "lab_result",
       );
     });
@@ -212,9 +234,10 @@ export const addChargeToInvoice = inngest.createFunction(
     if (!patientId || !priceInCents) {
       throw new NonRetriableError("Missing required charge information.");
     }
+    await connectDB();
 
-    let inv = await invoice.findOne({ patientId, status: "draft" });
-    await step.run("create invoice", async () => {
+    const invoiceId = await step.run("add-charge-to-draft-invoice", async () => {
+      let inv = await invoice.findOne({ patientId, status: "draft" });
       if (!inv) {
         inv = new invoice({ patientId, items: [], totalAmount: 0 });
       }
@@ -227,8 +250,9 @@ export const addChargeToInvoice = inngest.createFunction(
       });
       inv.totalAmount += priceInCents;
       await inv.save();
+      return inv._id.toString();
     });
 
-    return { success: true, invoiceId: inv?._id.toString() };
+    return { success: true, invoiceId };
   },
 );

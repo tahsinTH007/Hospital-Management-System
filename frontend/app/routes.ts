@@ -17,5 +17,8 @@ export default [
     route("activities-log", "routes/protected/ActivitiesLog.tsx"),
     route("profile/:id", "routes/protected/Profile.tsx"),
     route("financial-history", "routes/protected/FinancialHistory.tsx"),
+    // Modules that exist in the navigation but are not built yet, plus any
+    // unknown URL, render a friendly page instead of the raw error boundary.
+    route("*", "routes/protected/ComingSoon.tsx"),
   ]),
 ] satisfies RouteConfig;

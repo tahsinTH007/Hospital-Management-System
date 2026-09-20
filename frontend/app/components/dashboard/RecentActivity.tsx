@@ -46,10 +46,10 @@ const getActionConfig = (action: string) => {
 };
 
 export function RecentActivity() {
-  const queryKey = ["activities-log", 1];
-
+  // Own key: the Activities page caches ["activities-log", page] with a
+  // different page size, so sharing a key would show the wrong rows.
   const { data, isLoading, isError } = useQuery({
-    queryKey,
+    queryKey: ["activities-log", "recent"],
     queryFn: () => getActivityLogs({ page: 1, limit: 5 }),
     placeholderData: (previousData) => previousData,
   });
@@ -64,7 +64,7 @@ export function RecentActivity() {
 
   if (isError)
     return (
-      <p className="text-xs text-red-500 text-center">
+      <p className="text-xs text-destructive text-center">
         Error loading activities.
       </p>
     );
@@ -110,7 +110,7 @@ export function RecentActivity() {
                 </div>
                 <p className="text-xs text-slate-500 truncate leading-relaxed">
                   <span className="font-semibold text-slate-700 dark:text-slate-400">
-                    {log.user?.name}
+                    {log.user?.name ?? "Deleted user"}
                   </span>
                   {log.details ? ` • ${log.details}` : ""}
                 </p>
